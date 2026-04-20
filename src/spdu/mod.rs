@@ -28,13 +28,17 @@
 
 
 mod bits;
+mod plcw;
 mod type1;
 mod type2;
+mod type3;
 mod type4;
 mod type5;
 
+pub use plcw::*;
 pub use type1::*;
 pub use type2::*;
+pub use type3::*;
 pub use type4::*;
 pub use type5::*;
 
@@ -54,29 +58,6 @@ pub enum FixedLengthSPDU {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct PLCW16Bit {
-    pub report_value: u8,              // 8 bits (V(R))
-    pub expedited_frame_counter: u8,   // 3 bits
-    pub reserved_space: bool,          // 1 bit
-    pub pcid: bool,                    // 1 bit
-    pub retransmit_flag: bool,         // 1 bit
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PLCW32Bit {
-    pub report_value: u16,             // 16 bits (V(R))
-    pub expedited_frame_counter: u8,   // 3 bits
-    pub pcid: bool,                    // 1 bit
-    pub retransmit_flag: bool,         // 1 bit
-    // Spec figure 3-2 shows 9 spare bits; project requirements additionally call out
-    // `lockout_flag` and `wait_flag`. We carry these inside the spare region while
-    // keeping a 32-bit wire footprint.
-    pub lockout_flag: bool,            // 1 bit (within reserved spares)
-    pub wait_flag: bool,               // 1 bit (within reserved spares)
-    pub reserved_spares: u8,           // remaining 7 spare bits
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub enum VariableLengthSPDU {
     Type1(DirectivesOrReportsUHF), // 000
     Type2(TimeDistributionPDU),    // 001
@@ -86,12 +67,19 @@ pub enum VariableLengthSPDU {
     Reserved(u8, Vec<u8>),         // type_id, raw data
 }
 
+// These are the set of error types that SPDU parsing/encoding can return.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpduError {
-    Truncated(&'static str),
-    Invalid(&'static str),
+    
+    Truncated(&'static str), // This means the input byte slice did not have enough bytes to even read the required fields.
+    Invalid(&'static str), // This means that the bytes were present, but they violated the wire-format rules.
+    // The wire-format rules being (bad version/type bits, invalid fixed-length size, illegal values, etc.)
     LengthMismatch { declared: usize, actual: usize },
+    // The length mismatch is used for variable-length SPDUs where the header declares a body length, but the data slice doesn't match.
+    // Declared = length from the SPDU header
+    // Actual = number of bytes actually provided after the header
     Unsupported(&'static str),
+    // This is used for SPDUs that are not supported by the current implementation.
 }
 
 impl core::fmt::Display for SpduError {
@@ -111,29 +99,58 @@ impl std::error::Error for SpduError {}
 
 impl SPDU {
     /// Decode an SPDU from its on-wire big-endian byte representation.
+    // The from_bytes function returns a Result which is an enumeration that can be in one of two possible states: Ok or Err.
+    // The Ok variant indicates the operation was successful, and it contains the successfully generated value.
+    // The Err variant indicates the operation failed, and it contains information about how or why the operation failed.
+    // In this case, the successfully generated value is the SPDU itself, and the information about how or why the operation failed is contained in the SpduError enum.
+    // The SpduError enum is a user-defined type that contains information about the error that occurred.
+    // The SpduError enum is defined in the mod.rs file.
+    // The SpduError enum is defined as follows:
+    // pub enum SpduError {
+    //     Truncated(&'static str),
+    //     Invalid(&'static str),
+    //     LengthMismatch { declared: usize, actual: usize },
+    //     Unsupported(&'static str),
+    // }
+    // The Truncated variant indicates that the input byte slice did not have enough bytes to even read the required fields.
+    // The Invalid variant indicates that the bytes were present, but they violated the wire-format rules.
+    // The LengthMismatch variant indicates that the length of the input byte slice did not match the length of the SPDU.
     pub fn from_bytes(data: &[u8]) -> Result<Self, SpduError> {
         let first = *data.first().ok_or(SpduError::Truncated("empty SPDU"))?;
         let format_id = (first & 0x80) != 0; // bit 0 (MSB)
 
+        // All fixed-length SPDUs start with a format_id bit of 1.
+        // If the format_id bit is 1, then the SPDU is a fixed-length SPDU.
+        // If the format_id bit is 0, then the SPDU is a variable-length SPDU.
         if format_id {
+            // Fixed-length SPDUs are 2 or 4 octets long.
+            // If the SPDU is 2 octets long, then it is a 16-bit PLCW.
             if data.len() == 2 {
                 let word = u16::from_be_bytes([data[0], data[1]]);
                 let type_id = ((word >> 14) & 0x01) as u8;
+                // Checks the type of PLCW (16-bit or 32-bit)
                 if type_id != 0 {
                     return Err(SpduError::Invalid("F1 SPDU must have type identifier 0"));
                 }
                 Ok(SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(PLCW16Bit::from_u16(word))))
-            } else if data.len() == 4 {
+            } 
+            // If the SPDU is 4 octets long, then it is a 32-bit PLCW.
+            else if data.len() == 4 {
                 let word = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
                 let type_id = ((word >> 30) & 0x01) as u8;
+                // Checks the type of PLCW (16-bit or 32-bit)
                 if type_id != 1 {
                     return Err(SpduError::Invalid("F2 SPDU must have type identifier 1"));
                 }
                 Ok(SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(PLCW32Bit::from_u32(word))))
             } else {
+                // If the SPDU is not 2 or 4 octets long, then it is invalid.
                 Err(SpduError::Invalid("fixed-length SPDU must be 2 or 4 octets"))
             }
         } else {
+            // Variable-length SPDUs start with a format_id bit of 0. The type_id is the next 3 bits.
+            // The length of the SPDU is the next 4 bits. The length is the number of octets in the body of the SPDU.
+            // The body of the SPDU is the remaining bytes. The body is the data of the SPDU.
             let type_id = (first >> 4) & 0x07; // bits 1-3
             let len = (first & 0x0F) as usize; // bits 4-7
             let actual = data.len().saturating_sub(1);
@@ -201,75 +218,6 @@ impl SPDU {
                 Ok(out)
             }
         }
-    }
-}
-
-impl PLCW16Bit {
-    pub fn from_u16(word: u16) -> Self {
-        PLCW16Bit {
-            report_value: (word & 0x00FF) as u8,
-            expedited_frame_counter: ((word >> 8) & 0x07) as u8,
-            reserved_space: (word & (1 << 11)) != 0,
-            pcid: (word & (1 << 12)) != 0,
-            retransmit_flag: (word & (1 << 13)) != 0,
-        }
-    }
-
-    pub fn to_u16(&self) -> u16 {
-        let mut word = 0u16;
-        word |= self.report_value as u16;
-        word |= ((self.expedited_frame_counter & 0x07) as u16) << 8;
-        if self.reserved_space {
-            word |= 1 << 11;
-        }
-        if self.pcid {
-            word |= 1 << 12;
-        }
-        if self.retransmit_flag {
-            word |= 1 << 13;
-        }
-        word |= 1 << 15; // format_id=1
-        word
-    }
-}
-
-impl PLCW32Bit {
-    pub fn from_u32(word: u32) -> Self {
-        let lockout_flag = (word & (1 << 29)) != 0;
-        let wait_flag = (word & (1 << 28)) != 0;
-        let reserved_spares = ((word >> 21) & 0x7F) as u8;
-
-        PLCW32Bit {
-            report_value: (word & 0xFFFF) as u16,
-            expedited_frame_counter: ((word >> 16) & 0x07) as u8,
-            pcid: (word & (1 << 19)) != 0,
-            retransmit_flag: (word & (1 << 20)) != 0,
-            lockout_flag,
-            wait_flag,
-            reserved_spares,
-        }
-    }
-
-    pub fn to_u32(&self) -> u32 {
-        let mut word = 0u32;
-        word |= self.report_value as u32;
-        word |= ((self.expedited_frame_counter & 0x07) as u32) << 16;
-        if self.pcid {
-            word |= 1 << 19;
-        }
-        if self.retransmit_flag {
-            word |= 1 << 20;
-        }
-        if self.lockout_flag {
-            word |= 1 << 29;
-        }
-        if self.wait_flag {
-            word |= 1 << 28;
-        }
-        word |= ((self.reserved_spares as u32) & 0x7F) << 21;
-        word |= 1 << 31; // format_id=1
-        word |= 1 << 30; // type_id=1
-        word
     }
 }
 

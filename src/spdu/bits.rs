@@ -1,7 +1,16 @@
 // Bit-level helpers (MSB-first within each octet, with "bit 0" as the first (MSB) bit).
 // This matches the Annex D/E diagrams where fields are described from most-significant bit
 // (Bit 0) to least-significant bit.
-
+// The bit-level helpers are only used for Type 4 and Type 5 SPDUs.
+// F1/F2 PLCWs: fixed 16/32-bit words -> naturally word-aligned
+// Type 1: explictly "concatenated 16-bit protocol objects" --> nturally word-aligned
+// Type 2: "Time Distribution PDU" --> naturally byte-aligned
+// Type 4/5: The format of these types are bit-packed "directive" formats, not as clean sequences of whole bytes, 16-bit words, or octets.
+// Type 4/5 directives contain data fields whcih don't add up to a whole number of bytes at each boundary, so the next field often starts in the middle of a byte. This causes a break in the byte alignment.
+// This is why we need the bit-level helpers to read and write the bits of the data fields.
+// For example: 
+// If you have a 3-bit field followed immediately by a 5-bit field, you can read the full byte fine.
+// However, if you have a 6-bit field, the next field starts in the middle of a byte on the 7th bit, and so on.
 pub(crate) struct BitReader<'a> {
     data: &'a [u8],
     bit_pos: usize, // 0..=(data.len()*8)
