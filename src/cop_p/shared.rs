@@ -72,4 +72,3 @@ pub enum CopFrame {
     Expedited(ExpFrame),
     SequenceControlled(SeqFrame),
 }
-

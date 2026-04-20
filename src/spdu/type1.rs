@@ -75,11 +75,19 @@ pub struct ReportSourceSCID {
     pub source_scid: u16, // bits 0-9
 }
 
-
 // The following impl blocks define the bit-field implementations for each directive type.
 
 // The container for the Type 1 SPDU directives.
 impl DirectivesOrReportsUHF {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.directives.len() > 7 {
+            return Err("Type 1 SPDU data field may contain at most 7 directives".to_string());
+        }
+        for d in &self.directives {
+            d.validate()?;
+        }
+        Ok(())
+    }
 
     // The from_bytes function returns a Result which is an enumeration that can be in one of two possible states: Ok or Err.
 
@@ -108,9 +116,7 @@ impl DirectivesOrReportsUHF {
     // The to_bytes function validates the body is no more than 7 directives.
     // It converts each Type1Directive object to a 16-bit word, and then converts that word to a vector of bytes.
     pub fn to_bytes(&self) -> Result<Vec<u8>, String> {
-        if self.directives.len() > 7 {
-            return Err("Type 1 SPDU data field may contain at most 7 directives".to_string());
-        }
+        self.validate()?;
         let mut out = Vec::with_capacity(self.directives.len() * 2);
         for d in &self.directives {
             out.extend_from_slice(&d.to_u16().to_be_bytes());
@@ -122,10 +128,25 @@ impl DirectivesOrReportsUHF {
 // The Type1Directive identifies which 16-bit directive/report you have.
 // The variants correspond to the spec's Directive Type field (bits 13-15)
 impl Type1Directive {
+    pub fn validate(&self) -> Result<(), String> {
+        match self {
+            Type1Directive::SetTransmitterParameters(d) => d.validate(),
+            Type1Directive::SetControlParameters(d) => d.validate(),
+            Type1Directive::SetReceiverParameters(d) => d.validate(),
+            Type1Directive::SetVR(d) => d.validate(),
+            Type1Directive::ReportRequest(d) => d.validate(),
+            Type1Directive::SetPLExtensions(d) => d.validate(),
+            Type1Directive::ReportSourceSCID(d) => d.validate(),
+            Type1Directive::Reserved { .. } => Ok(()),
+        }
+    }
+
     pub fn from_u16(word: u16) -> Self {
         let directive_type = ((word >> 13) & 0x07) as u8;
         match directive_type {
-            0b000 => Type1Directive::SetTransmitterParameters(SetTransmitterParameters::from_u16(word)),
+            0b000 => {
+                Type1Directive::SetTransmitterParameters(SetTransmitterParameters::from_u16(word))
+            }
             0b001 => Type1Directive::SetControlParameters(SetControlParameters::from_u16(word)),
             0b010 => Type1Directive::SetReceiverParameters(SetReceiverParameters::from_u16(word)),
             0b011 => Type1Directive::SetVR(SetVR::from_u16(word)),
@@ -156,13 +177,29 @@ impl Type1Directive {
 }
 
 impl SetTransmitterParameters {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.tx_mode > 0x07 {
+            return Err("SetTransmitterParameters.tx_mode must be 0..7".to_string());
+        }
+        if self.tx_data_rate > 0x0F {
+            return Err("SetTransmitterParameters.tx_data_rate must be 0..15".to_string());
+        }
+        if self.tx_data_encoding > 0x03 {
+            return Err("SetTransmitterParameters.tx_data_encoding must be 0..3".to_string());
+        }
+        if self.tx_frequency > 0x07 {
+            return Err("SetTransmitterParameters.tx_frequency must be 0..7".to_string());
+        }
+        Ok(())
+    }
+
     pub fn from_u16(word: u16) -> Self {
         SetTransmitterParameters {
-            tx_mode: (word & 0x0007) as u8, // bits 0-2
-            tx_data_rate: ((word >> 3) & 0x000F) as u8, // bits 3-6
-            tx_modulation: (word & (1 << 7)) != 0, // bit 7
+            tx_mode: (word & 0x0007) as u8,                 // bits 0-2
+            tx_data_rate: ((word >> 3) & 0x000F) as u8,     // bits 3-6
+            tx_modulation: (word & (1 << 7)) != 0,          // bit 7
             tx_data_encoding: ((word >> 8) & 0x0003) as u8, // bits 8-9
-            tx_frequency: ((word >> 10) & 0x0007) as u8, // bits 10-12
+            tx_frequency: ((word >> 10) & 0x0007) as u8,    // bits 10-12
         }
     }
 
@@ -183,13 +220,26 @@ impl SetTransmitterParameters {
 }
 
 impl SetControlParameters {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.time_sample > 0x3F {
+            return Err("SetControlParameters.time_sample must be 0..63".to_string());
+        }
+        if self.duplex > 0x07 {
+            return Err("SetControlParameters.duplex must be 0..7".to_string());
+        }
+        if self.reserved > 0x03 {
+            return Err("SetControlParameters.reserved must be 0..3".to_string());
+        }
+        Ok(())
+    }
+
     pub fn from_u16(word: u16) -> Self {
         SetControlParameters {
-            time_sample: (word & 0x003F) as u8, // bits 0-5
-            duplex: ((word >> 6) & 0x07) as u8, // bits 6-8
-            reserved: ((word >> 9) & 0x03) as u8, // bits 9-10
+            time_sample: (word & 0x003F) as u8,           // bits 0-5
+            duplex: ((word >> 6) & 0x07) as u8,           // bits 6-8
+            reserved: ((word >> 9) & 0x03) as u8,         // bits 9-10
             remote_no_more_data: (word & (1 << 11)) != 0, // bit 11
-            token: (word & (1 << 12)) != 0, // bit 12
+            token: (word & (1 << 12)) != 0,               // bit 12
         }
     }
 
@@ -210,13 +260,29 @@ impl SetControlParameters {
 }
 
 impl SetReceiverParameters {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.rx_mode > 0x07 {
+            return Err("SetReceiverParameters.rx_mode must be 0..7".to_string());
+        }
+        if self.rx_data_rate > 0x0F {
+            return Err("SetReceiverParameters.rx_data_rate must be 0..15".to_string());
+        }
+        if self.rx_data_decoding > 0x03 {
+            return Err("SetReceiverParameters.rx_data_decoding must be 0..3".to_string());
+        }
+        if self.rx_frequency > 0x07 {
+            return Err("SetReceiverParameters.rx_frequency must be 0..7".to_string());
+        }
+        Ok(())
+    }
+
     pub fn from_u16(word: u16) -> Self {
         SetReceiverParameters {
-            rx_mode: (word & 0x0007) as u8, // bits 0-2
-            rx_data_rate: ((word >> 3) & 0x000F) as u8, // bits 3-6
-            rx_modulation: (word & (1 << 7)) != 0, // bit 7
+            rx_mode: (word & 0x0007) as u8,                 // bits 0-2
+            rx_data_rate: ((word >> 3) & 0x000F) as u8,     // bits 3-6
+            rx_modulation: (word & (1 << 7)) != 0,          // bit 7
             rx_data_decoding: ((word >> 8) & 0x0003) as u8, // bits 8-9
-            rx_frequency: ((word >> 10) & 0x0007) as u8, // bits 10-12
+            rx_frequency: ((word >> 10) & 0x0007) as u8,    // bits 10-12
         }
     }
 
@@ -237,6 +303,11 @@ impl SetReceiverParameters {
 }
 
 impl SetVR {
+    pub fn validate(&self) -> Result<(), String> {
+        // seq_ctrl_fsn is 8-bit; any u8 is valid by type.
+        Ok(())
+    }
+
     pub fn from_u16(word: u16) -> Self {
         SetVR {
             seq_ctrl_fsn: (word & 0x00FF) as u8, // bits 0-7
@@ -251,13 +322,26 @@ impl SetVR {
 }
 
 impl ReportRequest {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.spare > 0x07 {
+            return Err("ReportRequest.spare must be 0..7".to_string());
+        }
+        if self.status_report_request > 0x1F {
+            return Err("ReportRequest.status_report_request must be 0..31".to_string());
+        }
+        if self.time_tag_request > 0x07 {
+            return Err("ReportRequest.time_tag_request must be 0..7".to_string());
+        }
+        Ok(())
+    }
+
     pub fn from_u16(word: u16) -> Self {
         ReportRequest {
             spare: (word & 0x0007) as u8, // bits 0-2
             status_report_request: ((word >> 3) & 0x1F) as u8,
             time_tag_request: ((word >> 8) & 0x07) as u8, // bits 8-10
-            pcid0_plcw_request: (word & (1 << 11)) != 0, // bit 11
-            pcid1_plcw_request: (word & (1 << 12)) != 0, // bit 12
+            pcid0_plcw_request: (word & (1 << 11)) != 0,  // bit 11
+            pcid1_plcw_request: (word & (1 << 12)) != 0,  // bit 12
         }
     }
 
@@ -276,17 +360,33 @@ impl ReportRequest {
 }
 
 impl SetPLExtensions {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.carrier_mod > 0x03 {
+            return Err("SetPLExtensions.carrier_mod must be 0..3".to_string());
+        }
+        if self.data_mod > 0x03 {
+            return Err("SetPLExtensions.data_mod must be 0..3".to_string());
+        }
+        if self.mode_select > 0x03 {
+            return Err("SetPLExtensions.mode_select must be 0..3".to_string());
+        }
+        if self.scrambler > 0x03 {
+            return Err("SetPLExtensions.scrambler must be 0..3".to_string());
+        }
+        Ok(())
+    }
+
     pub fn from_u16(word: u16) -> Self {
         SetPLExtensions {
-            direction: (word & (1 << 0)) != 0, // bit 0
-            freq_table: (word & (1 << 1)) != 0, // bit 1
-            rate_table: (word & (1 << 2)) != 0, // bit 2
-            carrier_mod: ((word >> 3) & 0x03) as u8, // bits 3-4
-            data_mod: ((word >> 5) & 0x03) as u8, // bits 5-6
-            mode_select: ((word >> 7) & 0x03) as u8, // bits 7-8
-            scrambler: ((word >> 9) & 0x03) as u8, // bits 9-10
+            direction: (word & (1 << 0)) != 0,           // bit 0
+            freq_table: (word & (1 << 1)) != 0,          // bit 1
+            rate_table: (word & (1 << 2)) != 0,          // bit 2
+            carrier_mod: ((word >> 3) & 0x03) as u8,     // bits 3-4
+            data_mod: ((word >> 5) & 0x03) as u8,        // bits 5-6
+            mode_select: ((word >> 7) & 0x03) as u8,     // bits 7-8
+            scrambler: ((word >> 9) & 0x03) as u8,       // bits 9-10
             diff_mark_encoding: (word & (1 << 11)) != 0, // bit 11
-            rs_code: (word & (1 << 12)) != 0, // bit 12
+            rs_code: (word & (1 << 12)) != 0,            // bit 12
         }
     }
 
@@ -318,6 +418,13 @@ impl SetPLExtensions {
 }
 
 impl ReportSourceSCID {
+    pub fn validate(&self) -> Result<(), String> {
+        if (self.source_scid & !0x03FF) != 0 {
+            return Err("ReportSourceSCID.source_scid must be 10-bit (0..1023)".to_string());
+        }
+        Ok(())
+    }
+
     pub fn from_u16(word: u16) -> Self {
         ReportSourceSCID {
             source_scid: word & 0x03FF, // bits 0-9

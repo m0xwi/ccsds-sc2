@@ -7,4 +7,3 @@
 pub struct StatusReports {
     pub raw: Vec<u8>,
 }
-

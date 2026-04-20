@@ -8,7 +8,7 @@
 // Type 4/5: The format of these types are bit-packed "directive" formats, not as clean sequences of whole bytes, 16-bit words, or octets.
 // Type 4/5 directives contain data fields whcih don't add up to a whole number of bytes at each boundary, so the next field often starts in the middle of a byte. This causes a break in the byte alignment.
 // This is why we need the bit-level helpers to read and write the bits of the data fields.
-// For example: 
+// For example:
 // If you have a 3-bit field followed immediately by a 5-bit field, you can read the full byte fine.
 // However, if you have a 6-bit field, the next field starts in the middle of a byte on the 7th bit, and so on.
 pub(crate) struct BitReader<'a> {
@@ -22,7 +22,10 @@ impl<'a> BitReader<'a> {
     }
 
     pub(crate) fn remaining_bits(&self) -> usize {
-        self.data.len().saturating_mul(8).saturating_sub(self.bit_pos)
+        self.data
+            .len()
+            .saturating_mul(8)
+            .saturating_sub(self.bit_pos)
     }
 
     pub(crate) fn read_bits_u64(&mut self, n: usize) -> Result<u64, String> {
@@ -65,7 +68,10 @@ pub(crate) struct BitWriter {
 
 impl BitWriter {
     pub(crate) fn new() -> Self {
-        Self { bits: Vec::new(), bit_len: 0 }
+        Self {
+            bits: Vec::new(),
+            bit_len: 0,
+        }
     }
 
     pub(crate) fn bit_len(&self) -> usize {
@@ -103,4 +109,3 @@ impl BitWriter {
         self.bits
     }
 }
-

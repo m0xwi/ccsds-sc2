@@ -16,4 +16,3 @@ pub fn crc16_ccitt_false(data: &[u8]) -> u16 {
     }
     crc
 }
-

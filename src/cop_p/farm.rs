@@ -2,7 +2,7 @@
 
 use crate::{PLCW16Bit, PLCW32Bit};
 
-use super::shared::{add_mod, dist_mod, Seq, SeqWidth};
+use super::shared::{Seq, SeqWidth, add_mod, dist_mod};
 
 /// Receiver-side COP-P state: `V(R)`, gap detection, expedited counter, PLCW fields.
 ///
@@ -64,7 +64,7 @@ impl FarmP {
         PLCW16Bit {
             report_value: self.v_r.as_u8(),
             expedited_frame_counter: self.expedited_frame_counter,
-            reserved_space: false,
+            reserved_spare: false,
             pcid,
             retransmit_flag: self.r_s,
         }
@@ -108,4 +108,3 @@ mod tests {
         assert!(!farm.r_s);
     }
 }
-

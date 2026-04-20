@@ -35,8 +35,16 @@ impl Version4Frame {
         if version != 0b11 {
             return Err(FrameError::Invalid("not a version-4 frame"));
         }
-        let kind = if ((b0 >> 5) & 1) == 0 { FrameKind::PFrame } else { FrameKind::UFrame };
-        let qos = if ((b0 >> 4) & 1) == 0 { Qos::Expedited } else { Qos::SequenceControlled };
+        let kind = if ((b0 >> 5) & 1) == 0 {
+            FrameKind::PFrame
+        } else {
+            FrameKind::UFrame
+        };
+        let qos = if ((b0 >> 4) & 1) == 0 {
+            Qos::Expedited
+        } else {
+            Qos::SequenceControlled
+        };
 
         let scid = u16::from_be_bytes([data[1], data[2]]);
         let vcid = data[3] & 0x3F;
@@ -54,15 +62,26 @@ impl Version4Frame {
             _ => None,
         };
 
-        Ok(Self { kind, qos, scid, vcid, seq, payload: data[idx..].to_vec() })
+        Ok(Self {
+            kind,
+            qos,
+            scid,
+            vcid,
+            seq,
+            payload: data[idx..].to_vec(),
+        })
     }
 
     pub(crate) fn to_bytes_without_crc(&self) -> Vec<u8> {
         let mut out = Vec::new();
         let mut b0 = 0u8;
         b0 |= 0b11 << 6;
-        if self.kind == FrameKind::UFrame { b0 |= 1 << 5; }
-        if self.qos == Qos::SequenceControlled { b0 |= 1 << 4; }
+        if self.kind == FrameKind::UFrame {
+            b0 |= 1 << 5;
+        }
+        if self.qos == Qos::SequenceControlled {
+            b0 |= 1 << 4;
+        }
         out.push(b0);
         out.extend_from_slice(&self.scid.to_be_bytes());
         out.push(self.vcid & 0x3F);
@@ -74,4 +93,3 @@ impl Version4Frame {
         out
     }
 }
-

@@ -18,11 +18,10 @@
 //!
 //! - [`crate::spdu`] for PLCW **Type F1/F2** encoding carried in P-frames.
 
-mod shared;
-mod fop;
 mod farm;
+mod fop;
+mod shared;
 
-pub use shared::*;
-pub use fop::*;
 pub use farm::*;
-
+pub use fop::*;
+pub use shared::*;

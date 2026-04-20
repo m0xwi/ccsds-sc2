@@ -24,6 +24,8 @@ pub use crc16::*;
 pub use v3::*;
 pub use v4::*;
 
+use crate::wire::{WireDecode, WireEncode};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameVersion {
     V2, // AOS (not fully supported here; expedited only per spec note)
@@ -57,7 +59,10 @@ impl core::fmt::Display for FrameError {
             FrameError::Truncated(msg) => write!(f, "truncated: {msg}"),
             FrameError::Invalid(msg) => write!(f, "invalid: {msg}"),
             FrameError::BadCrc { expected, computed } => {
-                write!(f, "bad CRC: expected 0x{expected:04x}, computed 0x{computed:04x}")
+                write!(
+                    f,
+                    "bad CRC: expected 0x{expected:04x}, computed 0x{computed:04x}"
+                )
             }
             FrameError::BadAsm => write!(f, "bad ASM"),
         }
@@ -132,9 +137,15 @@ impl Frame {
         let first = without_crc[0];
         let version_bits = first >> 6; // first two bits of header
         match version_bits {
-            0b10 => Ok(Frame::V3(Version3Frame::from_bytes_without_crc(without_crc)?)),
-            0b11 => Ok(Frame::V4(Version4Frame::from_bytes_without_crc(without_crc)?)),
-            0b01 => Err(FrameError::Invalid("version-2 frames not supported by this decoder")),
+            0b10 => Ok(Frame::V3(Version3Frame::from_bytes_without_crc(
+                without_crc,
+            )?)),
+            0b11 => Ok(Frame::V4(Version4Frame::from_bytes_without_crc(
+                without_crc,
+            )?)),
+            0b01 => Err(FrameError::Invalid(
+                "version-2 frames not supported by this decoder",
+            )),
             _ => Err(FrameError::Invalid("version bits 00 are invalid")),
         }
     }
@@ -151,6 +162,30 @@ impl Frame {
     }
 }
 
+impl WireDecode for Frame {
+    type Error = FrameError;
+
+    fn from_wire_bytes(data: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(data)
+    }
+}
+
+impl WireEncode for Frame {
+    type Error = core::convert::Infallible;
+
+    fn to_wire_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+        Ok(self.to_bytes())
+    }
+}
+
+impl TryFrom<&[u8]> for Frame {
+    type Error = FrameError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,7 +196,7 @@ mod tests {
         let pdu = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(PLCW16Bit {
             report_value: 7,
             expedited_frame_counter: 1,
-            reserved_space: false,
+            reserved_spare: false,
             pcid: false,
             retransmit_flag: false,
         }));
@@ -198,4 +233,3 @@ mod tests {
         assert!(matches!(err, FrameError::BadCrc { .. }));
     }
 }
-

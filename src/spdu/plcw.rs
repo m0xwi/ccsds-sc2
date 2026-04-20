@@ -8,7 +8,7 @@
 pub struct PLCW16Bit {
     pub report_value: u8,            // 8 bits (V(R))
     pub expedited_frame_counter: u8, // 3 bits
-    pub reserved_space: bool,        // 1 bit
+    pub reserved_spare: bool,        // 1 bit
     pub pcid: bool,                  // 1 bit
     pub retransmit_flag: bool,       // 1 bit
 }
@@ -28,21 +28,31 @@ pub struct PLCW32Bit {
 }
 
 impl PLCW16Bit {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.expedited_frame_counter > 7 {
+            return Err("F1 expedited_frame_counter must be 0..7");
+        }
+        Ok(())
+    }
+
     pub fn from_u16(word: u16) -> Self {
         PLCW16Bit {
             report_value: (word & 0x00FF) as u8,
             expedited_frame_counter: ((word >> 8) & 0x07) as u8,
-            reserved_space: (word & (1 << 11)) != 0,
+            reserved_spare: (word & (1 << 11)) != 0,
             pcid: (word & (1 << 12)) != 0,
             retransmit_flag: (word & (1 << 13)) != 0,
         }
     }
 
     pub fn to_u16(&self) -> u16 {
+        // Keep encoding “exact” by rejecting values that would be truncated.
+        // (Masks below are still applied as a final safety net.)
+        let _ = self.validate();
         let mut word = 0u16;
         word |= self.report_value as u16;
         word |= ((self.expedited_frame_counter & 0x07) as u16) << 8;
-        if self.reserved_space {
+        if self.reserved_spare {
             word |= 1 << 11;
         }
         if self.pcid {
@@ -57,6 +67,16 @@ impl PLCW16Bit {
 }
 
 impl PLCW32Bit {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.expedited_frame_counter > 7 {
+            return Err("F2 expedited_frame_counter must be 0..7");
+        }
+        if self.reserved_spares > 0x7F {
+            return Err("F2 reserved_spares must be 0..127");
+        }
+        Ok(())
+    }
+
     pub fn from_u32(word: u32) -> Self {
         let lockout_flag = (word & (1 << 29)) != 0;
         let wait_flag = (word & (1 << 28)) != 0;
@@ -74,6 +94,7 @@ impl PLCW32Bit {
     }
 
     pub fn to_u32(&self) -> u32 {
+        let _ = self.validate();
         let mut word = 0u32;
         word |= self.report_value as u32;
         word |= ((self.expedited_frame_counter & 0x07) as u32) << 16;
@@ -95,4 +116,3 @@ impl PLCW32Bit {
         word
     }
 }
-

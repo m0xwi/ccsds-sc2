@@ -24,9 +24,6 @@
 /// 1. What kind of SPDU it is
 /// 2. The endianness
 /// 3. The validation constraints
-
-
-
 mod bits;
 mod plcw;
 mod type1;
@@ -42,12 +39,14 @@ pub use type3::*;
 pub use type4::*;
 pub use type5::*;
 
+use crate::wire::{WireDecode, WireEncode};
+
 /// Top-level SPDU: fixed (Format ID = 1) or variable-length (Format ID = 0).
 ///
 /// See **§3.1** and Tables 3-1 / 3-2.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SPDU {
-    FixedLengthSPDU(FixedLengthSPDU),      // Format ID = 1
+    FixedLengthSPDU(FixedLengthSPDU),       // Format ID = 1
     VariableLengthSPDU(VariableLengthSPDU), // Format ID = 0
 }
 
@@ -70,7 +69,6 @@ pub enum VariableLengthSPDU {
 // These are the set of error types that SPDU parsing/encoding can return.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpduError {
-    
     Truncated(&'static str), // This means the input byte slice did not have enough bytes to even read the required fields.
     Invalid(&'static str), // This means that the bytes were present, but they violated the wire-format rules.
     // The wire-format rules being (bad version/type bits, invalid fixed-length size, illegal values, etc.)
@@ -132,8 +130,10 @@ impl SPDU {
                 if type_id != 0 {
                     return Err(SpduError::Invalid("F1 SPDU must have type identifier 0"));
                 }
-                Ok(SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(PLCW16Bit::from_u16(word))))
-            } 
+                Ok(SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(
+                    PLCW16Bit::from_u16(word),
+                )))
+            }
             // If the SPDU is 4 octets long, then it is a 32-bit PLCW.
             else if data.len() == 4 {
                 let word = u32::from_be_bytes([data[0], data[1], data[2], data[3]]);
@@ -142,10 +142,14 @@ impl SPDU {
                 if type_id != 1 {
                     return Err(SpduError::Invalid("F2 SPDU must have type identifier 1"));
                 }
-                Ok(SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(PLCW32Bit::from_u32(word))))
+                Ok(SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(
+                    PLCW32Bit::from_u32(word),
+                )))
             } else {
                 // If the SPDU is not 2 or 4 octets long, then it is invalid.
-                Err(SpduError::Invalid("fixed-length SPDU must be 2 or 4 octets"))
+                Err(SpduError::Invalid(
+                    "fixed-length SPDU must be 2 or 4 octets",
+                ))
             }
         } else {
             // Variable-length SPDUs start with a format_id bit of 0. The type_id is the next 3 bits.
@@ -155,30 +159,39 @@ impl SPDU {
             let len = (first & 0x0F) as usize; // bits 4-7
             let actual = data.len().saturating_sub(1);
             if len != actual {
-                return Err(SpduError::LengthMismatch { declared: len, actual });
+                return Err(SpduError::LengthMismatch {
+                    declared: len,
+                    actual,
+                });
             }
             if len > 15 {
-                return Err(SpduError::Invalid("variable-length SPDU data length must be 0..15"));
+                return Err(SpduError::Invalid(
+                    "variable-length SPDU data length must be 0..15",
+                ));
             }
             let body = &data[1..];
             let vl = match type_id {
                 0b000 => VariableLengthSPDU::Type1(
-                    DirectivesOrReportsUHF::from_bytes(body).map_err(|_| SpduError::Invalid("invalid Type 1 body"))?,
+                    DirectivesOrReportsUHF::from_bytes(body)
+                        .map_err(|_| SpduError::Invalid("invalid Type 1 body"))?,
                 ),
                 0b001 => {
                     if body.len() != TimeDistributionPDU::LENGTH_OCTETS {
                         return Err(SpduError::Invalid("Type 2 body must be 15 octets"));
                     }
                     VariableLengthSPDU::Type2(
-                        TimeDistributionPDU::from_bytes(body).map_err(|_| SpduError::Invalid("invalid Type 2 body"))?,
+                        TimeDistributionPDU::from_bytes(body)
+                            .map_err(|_| SpduError::Invalid("invalid Type 2 body"))?,
                     )
                 }
                 0b010 => VariableLengthSPDU::Type3(StatusReports { raw: body.to_vec() }),
                 0b011 => VariableLengthSPDU::Type4(
-                    FirstGenLunar::from_bytes(body).map_err(|_| SpduError::Invalid("invalid Type 4 body"))?,
+                    FirstGenLunar::from_bytes(body)
+                        .map_err(|_| SpduError::Invalid("invalid Type 4 body"))?,
                 ),
                 0b100 => VariableLengthSPDU::Type5(
-                    SecondGenLunar::from_bytes(body).map_err(|_| SpduError::Invalid("invalid Type 5 body"))?,
+                    SecondGenLunar::from_bytes(body)
+                        .map_err(|_| SpduError::Invalid("invalid Type 5 body"))?,
                 ),
                 other => VariableLengthSPDU::Reserved(other, body.to_vec()),
             };
@@ -189,26 +202,38 @@ impl SPDU {
     /// Encode an SPDU to its on-wire big-endian byte representation.
     pub fn to_bytes(&self) -> Result<Vec<u8>, SpduError> {
         match self {
-            SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw)) => Ok(plcw.to_u16().to_be_bytes().to_vec()),
-            SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw)) => Ok(plcw.to_u32().to_be_bytes().to_vec()),
+            SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw)) => {
+                Ok(plcw.to_u16().to_be_bytes().to_vec())
+            }
+            SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw)) => {
+                Ok(plcw.to_u32().to_be_bytes().to_vec())
+            }
             SPDU::VariableLengthSPDU(vl) => {
                 let (type_id, body): (u8, Vec<u8>) = match vl {
-                    VariableLengthSPDU::Type1(x) => {
-                        (0b000, x.to_bytes().map_err(|_| SpduError::Invalid("invalid Type 1 body"))?)
-                    }
+                    VariableLengthSPDU::Type1(x) => (
+                        0b000,
+                        x.to_bytes()
+                            .map_err(|_| SpduError::Invalid("invalid Type 1 body"))?,
+                    ),
                     VariableLengthSPDU::Type2(x) => (0b001, x.to_bytes().to_vec()),
                     VariableLengthSPDU::Type3(x) => (0b010, x.raw.clone()),
-                    VariableLengthSPDU::Type4(x) => {
-                        (0b011, x.to_bytes().map_err(|_| SpduError::Invalid("invalid Type 4 body"))?)
-                    }
-                    VariableLengthSPDU::Type5(x) => {
-                        (0b100, x.to_bytes().map_err(|_| SpduError::Invalid("invalid Type 5 body"))?)
-                    }
+                    VariableLengthSPDU::Type4(x) => (
+                        0b011,
+                        x.to_bytes()
+                            .map_err(|_| SpduError::Invalid("invalid Type 4 body"))?,
+                    ),
+                    VariableLengthSPDU::Type5(x) => (
+                        0b100,
+                        x.to_bytes()
+                            .map_err(|_| SpduError::Invalid("invalid Type 5 body"))?,
+                    ),
                     VariableLengthSPDU::Reserved(t, raw) => (*t & 0x07, raw.clone()),
                 };
 
                 if body.len() > 15 {
-                    return Err(SpduError::Invalid("variable-length SPDU body may not exceed 15 octets"));
+                    return Err(SpduError::Invalid(
+                        "variable-length SPDU body may not exceed 15 octets",
+                    ));
                 }
 
                 let header = ((type_id & 0x07) << 4) | ((body.len() as u8) & 0x0F);
@@ -221,6 +246,30 @@ impl SPDU {
     }
 }
 
+impl WireDecode for SPDU {
+    type Error = SpduError;
+
+    fn from_wire_bytes(data: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(data)
+    }
+}
+
+impl WireEncode for SPDU {
+    type Error = SpduError;
+
+    fn to_wire_bytes(&self) -> Result<Vec<u8>, Self::Error> {
+        self.to_bytes()
+    }
+}
+
+impl TryFrom<&[u8]> for SPDU {
+    type Error = SpduError;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        Self::from_bytes(value)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -230,7 +279,7 @@ mod tests {
         let plcw = PLCW16Bit {
             report_value: 127,
             expedited_frame_counter: 3,
-            reserved_space: false,
+            reserved_spare: false,
             pcid: false,
             retransmit_flag: false,
         };
@@ -264,4 +313,3 @@ mod tests {
         assert_eq!(pdu, parsed);
     }
 }
-

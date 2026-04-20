@@ -35,10 +35,12 @@
 //! **FARM-P** — Frame Acceptance and Reporting Mechanism; **PCID** — Physical Channel ID;
 //! **QoS** — Quality of Service (Expedited vs Sequence Controlled).
 
-pub mod spdu;
 pub mod cop_p;
 pub mod frame;
+pub mod spdu;
+pub mod wire;
 
-pub use spdu::*;
 pub use cop_p::*;
 pub use frame::*;
+pub use spdu::*;
+pub use wire::*;

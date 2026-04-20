@@ -12,7 +12,11 @@ pub enum Type5Directive {
     SetVR(Type5SetVR),                                             // 16 bits
     ReportSourceScid(Type5ReportSourceScid),                       // 32 bits
     PnRanging(Type5PnRanging),                                     // 96 bits
-    Reserved { directive_name: u8, raw_bits: Vec<u8>, bit_len: usize },
+    Reserved {
+        directive_name: u8,
+        raw_bits: Vec<u8>,
+        bit_len: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -144,7 +148,9 @@ impl SecondGenLunar {
                     }
                     let _reserved = r.read_bits_u64(13)?;
                     let scid = r.read_bits_u64(16)? as u16;
-                    directives.push(Type5Directive::ReportSourceScid(Type5ReportSourceScid { source_scid: scid }));
+                    directives.push(Type5Directive::ReportSourceScid(Type5ReportSourceScid {
+                        source_scid: scid,
+                    }));
                 }
                 0b100 => {
                     if r.remaining_bits() < 93 {
@@ -175,7 +181,11 @@ impl SecondGenLunar {
                 other => {
                     let bit_len = r.remaining_bits();
                     let raw_bits = r.read_bits_bytes(bit_len)?;
-                    directives.push(Type5Directive::Reserved { directive_name: other, raw_bits, bit_len });
+                    directives.push(Type5Directive::Reserved {
+                        directive_name: other,
+                        raw_bits,
+                        bit_len,
+                    });
                 }
             }
         }
@@ -237,7 +247,11 @@ impl SecondGenLunar {
                     w.write_bits_u64((x.status_report_request & 0x1F) as u64, 5);
                     w.write_bits_u64(0, 2); // spares
                 }
-                Type5Directive::Reserved { directive_name, raw_bits, bit_len } => {
+                Type5Directive::Reserved {
+                    directive_name,
+                    raw_bits,
+                    bit_len,
+                } => {
                     w.write_bits_u64((*directive_name & 0x07) as u64, 3);
                     w.write_bits_bytes(raw_bits, *bit_len);
                 }
@@ -283,4 +297,3 @@ mod tests {
         assert_eq!(lunar, parsed);
     }
 }
-

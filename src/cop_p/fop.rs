@@ -1,6 +1,6 @@
 //! FOP-P — **Frame Operation Procedure** (sender side), **§6.2**.
 
-use super::shared::{add_mod, dist_mod, CopError, CopFrame, ExpFrame, Seq, SeqFrame, SeqWidth};
+use super::shared::{CopError, CopFrame, ExpFrame, Seq, SeqFrame, SeqWidth, add_mod, dist_mod};
 
 /// Sender-side COP-P state: sequencing, window, retransmission, PLCW handling.
 ///
@@ -12,12 +12,12 @@ pub struct FopP {
     transmission_window: u8, // max 127
 
     // Internal variables (6.2.2 + state table usage)
-    pub ve_s: u8,  // modulo-8
-    pub v_s: Seq,  // next new seq number to allocate
-    pub vv_s: Seq, // retransmission pointer
-    pub n_r: Seq,  // last received report value
-    pub nn_r: Seq, // next unacknowledged (left edge)
-    pub r_r: bool, // last retransmit flag from PLCW
+    pub ve_s: u8,   // modulo-8
+    pub v_s: Seq,   // next new seq number to allocate
+    pub vv_s: Seq,  // retransmission pointer
+    pub n_r: Seq,   // last received report value
+    pub nn_r: Seq,  // next unacknowledged (left edge)
+    pub r_r: bool,  // last retransmit flag from PLCW
     pub rr_r: bool, // previous retransmit flag from PLCW (for validity checks)
 
     sent_queue: Vec<SeqFrame>,
@@ -134,11 +134,15 @@ impl FopP {
         }
 
         if retransmit_flag && report_value.0 == self.v_s.0 {
-            return Err(CopError::InvalidPlcw("retransmit set but all frames are acknowledged"));
+            return Err(CopError::InvalidPlcw(
+                "retransmit set but all frames are acknowledged",
+            ));
         }
 
         if !retransmit_flag && self.rr_r && report_value.0 == self.nn_r.0 {
-            return Err(CopError::InvalidPlcw("retransmit cleared but no new frames acknowledged"));
+            return Err(CopError::InvalidPlcw(
+                "retransmit cleared but no new frames acknowledged",
+            ));
         }
 
         if report_value.0 != self.nn_r.0 {
@@ -238,4 +242,3 @@ mod tests {
         }
     }
 }
-

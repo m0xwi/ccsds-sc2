@@ -11,9 +11,14 @@ pub enum Type4Directive {
     ReportRequest(Type4ReportRequest),                             // 16 bits
     SetVR(Type4SetVR),                                             // 16 bits
     ReportSourceScid(Type4ReportSourceScid),                       // 32 bits
-    Reserved { directive_name: u8, raw_bits: Vec<u8>, bit_len: usize },
+    Reserved {
+        directive_name: u8,
+        raw_bits: Vec<u8>,
+        bit_len: usize,
+    },
 }
 
+// The following per-directive structs define the data fields for each directive type.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Type4LinkEstablishmentAndControl {
     pub link_direction: bool,
@@ -49,6 +54,8 @@ pub struct Type4SetVR {
 pub struct Type4ReportSourceScid {
     pub source_scid: u16,
 }
+
+// The following impl block define the bit-field implementations for the FirstGenLunar SPDU.
 
 impl FirstGenLunar {
     pub fn from_bytes(data: &[u8]) -> Result<Self, String> {
@@ -109,12 +116,18 @@ impl FirstGenLunar {
                     }
                     let _reserved = r.read_bits_u64(13)?;
                     let scid = r.read_bits_u64(16)? as u16;
-                    directives.push(Type4Directive::ReportSourceScid(Type4ReportSourceScid { source_scid: scid }));
+                    directives.push(Type4Directive::ReportSourceScid(Type4ReportSourceScid {
+                        source_scid: scid,
+                    }));
                 }
                 other => {
                     let bit_len = r.remaining_bits();
                     let raw_bits = r.read_bits_bytes(bit_len)?;
-                    directives.push(Type4Directive::Reserved { directive_name: other, raw_bits, bit_len });
+                    directives.push(Type4Directive::Reserved {
+                        directive_name: other,
+                        raw_bits,
+                        bit_len,
+                    });
                 }
             }
         }
@@ -160,7 +173,11 @@ impl FirstGenLunar {
                     w.write_bits_u64(0, 13);
                     w.write_bits_u64(x.source_scid as u64, 16);
                 }
-                Type4Directive::Reserved { directive_name, raw_bits, bit_len } => {
+                Type4Directive::Reserved {
+                    directive_name,
+                    raw_bits,
+                    bit_len,
+                } => {
                     w.write_bits_u64((*directive_name & 0x07) as u64, 3);
                     w.write_bits_bytes(raw_bits, *bit_len);
                 }
@@ -197,4 +214,3 @@ mod tests {
         assert_eq!(lunar, parsed);
     }
 }
-

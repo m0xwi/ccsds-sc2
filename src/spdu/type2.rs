@@ -1,3 +1,25 @@
+/// The TIME DISTRIBUTION SPDU is designed for time synchronization and distribution between two transceivers in a Proximity-1 session.
+
+// Octet 0 describes the type time distribution directive
+
+// Octet 1-8 describes the transceiver's internal clock at the exact moment of the trailing edge of the last bit of the ASM (Attached Sync Marker) of the transmitted crosses the internal clock capture point.
+// It is a high-precision timestamp when the the time distribution SPDU was being transmitted.
+// It is specifically tied to the transmission instant of the PLTU that carries the SPDU.
+
+// Octet 9-11 is the send side delay
+// It describes the measured delay between the internal clock capture point (moment capture in the transceiver clock field), and the moment the trailing edge of the last bit of the Sync-Marked Transfer Frame (SMTF) crosses the time reference point (the RF output / antenna reference point).
+// It corrects for the known hardware/processing delay that occurs after the clock capture but before the signal actually leaves the transmitter.
+
+// Octet 12-14 is the one-way light time
+// This is the calculated propagation delay (light travel time) from:
+// the instant the trailing edge of the last bit of the transmited SMTF crosses the initiator's time reference point, to the instant that same signal reaches the destination node's time reference point.
+
+// In short, the transceiver clock is the timestamp at internal capture point (during PLTU transmission)
+// The send-side delay is how long it took from capture to actual transmit reference point (SMTF out the door)
+// The one-way light time is how long it takes the signal to fly through space to the other side.
+
+// Together, the receiver can compute a very accurate time offset between the two transceivers' clocks.
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimeDistributionPDU {
     pub directive_type: u8,          // octet 0
@@ -57,4 +79,3 @@ mod tests {
         assert_eq!(pdu, parsed);
     }
 }
-

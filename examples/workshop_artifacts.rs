@@ -1,11 +1,15 @@
 //! Hex dumps for CCSDS 235.1 competition workshop interoperability artifacts (deliverables.pdf §3.12).
 use ccsds_sc2::{
-    DirectivesOrReportsUHF, FixedLengthSPDU, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SetVR,
-    SPDU, Type1Directive, VariableLengthSPDU, Version3Frame, DEFAULT_ASM,
+    DEFAULT_ASM, DirectivesOrReportsUHF, FixedLengthSPDU, Frame, FrameKind, PLCW16Bit, PLCW32Bit,
+    Qos, SPDU, SetVR, Type1Directive, VariableLengthSPDU, Version3Frame,
 };
 
 fn hex_line(label: &str, bytes: &[u8]) {
-    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+    let hex: String = bytes
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<Vec<_>>()
+        .join(" ");
     println!("{label}: {hex}");
 }
 
@@ -14,7 +18,7 @@ fn main() {
     let a1 = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(PLCW16Bit {
         report_value: 127,
         expedited_frame_counter: 3,
-        reserved_space: false,
+        reserved_spare: false,
         pcid: false,
         retransmit_flag: false,
     }));
