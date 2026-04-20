@@ -1,0 +1,9 @@
+[package]
+name = "ccsds-sc2"
+version = "0.1.0"
+edition = "2024"
+authors = ["William Weller <m0xwi@proton.me>"]
+description = "A practical, interoperable reference implementation of the Space Communications Session Control aligned with the CCSDS 235.1 standard."
+
+
+[dependencies]
