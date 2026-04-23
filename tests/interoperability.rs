@@ -13,7 +13,7 @@
 //! message prints both **hex** and **raw byte arrays** side by side.
 
 use ccsds_sc2::{
-    DirectivesOrReportsUHF, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU, SetVR, SpduError,
+    DirectivesOrReportsUHF, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU, SpduError,
     Type1Directive, Version3Frame, bytes_to_hex, hex_to_bytes,
 };
 
@@ -99,9 +99,7 @@ fn interop_variable_length_type1_set_vr_workshop_artifact() {
     // Variable-Length SPDU Type 1 Directive, SET V(R) with SEQ_CTRL_FSN=42
     const VECTOR_HEX: &str = "02602a";
 
-    let spdu = SPDU::type1(DirectivesOrReportsUHF {
-        directives: vec![Type1Directive::SetVR(SetVR { seq_ctrl_fsn: 42 })],
-    });
+    let spdu = SPDU::type1(DirectivesOrReportsUHF::single(Type1Directive::set_vr(42)));
 
     // Expected bytes:
     // header: type_id=0 (Type1), len=2 => 0x02

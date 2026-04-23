@@ -1,5 +1,7 @@
 # Interoperability tests
 
+For **how SPDU interoperates with frame and COP-P layers** (APIs, bytes vs typed payloads, pitfalls), see [`INTEROPERABILITY_LAYERS.md`](./INTEROPERABILITY_LAYERS.md).
+
 This document explains how `ccsds-sc2/tests/interoperability.rs` maps to the CCSDS 235.1-W-0.4 reference-implementation functional requirements and the interoperability testing overview.
 
 ## How to run

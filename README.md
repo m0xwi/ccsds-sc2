@@ -25,7 +25,9 @@ This crate includes an interoperability-oriented SPDU wire-format implementation
 - **Variable-length SPDUs**: Types **1–5** (Type 1 directives implemented; others are parsed/serialized as defined in this crate)
 - **Hex dump exchange**: parse/format raw octets for cross-implementation comparisons
 
-See `docs/INTEROPERABILITY_TESTS.md` for the exact vectors and expected hex.
+- **Layer interop (SPDU ↔ frame ↔ COP-P):** [`docs/INTEROPERABILITY_LAYERS.md`](docs/INTEROPERABILITY_LAYERS.md)
+- **Test vectors and expected hex:** [`docs/INTEROPERABILITY_TESTS.md`](docs/INTEROPERABILITY_TESTS.md)
+- **Doc index:** [`docs/README.md`](docs/README.md)
 
 ## Run examples
 

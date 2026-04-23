@@ -1,6 +1,6 @@
 //! Hex dumps for CCSDS 235.1 competition workshop interoperability artifacts (deliverables.pdf §3.12).
 use ccsds_sc2::{
-    DEFAULT_ASM, DirectivesOrReportsUHF, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU, SetVR,
+    DEFAULT_ASM, DirectivesOrReportsUHF, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU,
     Type1Directive, Version3Frame,
 };
 
@@ -42,9 +42,7 @@ fn main() {
     hex_line("2 F2 PLCW (SPDU wire)", &b2);
 
     // 3 — Variable-length Type 1, SET V(R), SEQ_CTRL_FSN=42
-    let a3 = SPDU::type1(DirectivesOrReportsUHF {
-        directives: vec![Type1Directive::SetVR(SetVR { seq_ctrl_fsn: 42 })],
-    });
+    let a3 = SPDU::type1(DirectivesOrReportsUHF::single(Type1Directive::set_vr(42)));
     let b3 = a3.to_bytes().unwrap();
     hex_line("3 Type1 SET V(R) (SPDU wire)", &b3);
 

@@ -88,6 +88,16 @@ pub struct ReportSourceSCID {
 
 // The container for the Type 1 SPDU directives.
 impl DirectivesOrReportsUHF {
+    pub fn new(directives: Vec<Type1Directive>) -> Self {
+        Self { directives }
+    }
+
+    pub fn single(d: Type1Directive) -> Self {
+        Self {
+            directives: vec![d],
+        }
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.directives.len() > 7 {
             return Err("Type 1 SPDU data field may contain at most 7 directives".to_string());
@@ -182,6 +192,107 @@ impl Type1Directive {
             Type1Directive::ReportSourceSCID(d) => d.to_u16(),
             Type1Directive::Reserved { raw_value, .. } => *raw_value,
         }
+    }
+
+    /// Same field order as [`SetTransmitterParameters`] (bits 0–12).
+    pub fn set_transmitter_parameters(
+        tx_mode: u8,
+        tx_data_rate: u8,
+        tx_modulation: bool,
+        tx_data_encoding: u8,
+        tx_frequency: u8,
+    ) -> Self {
+        Self::SetTransmitterParameters(SetTransmitterParameters {
+            tx_mode,
+            tx_data_rate,
+            tx_modulation,
+            tx_data_encoding,
+            tx_frequency,
+        })
+    }
+
+    /// Same field order as [`SetControlParameters`].
+    pub fn set_control_parameters(
+        time_sample: u8,
+        duplex: u8,
+        reserved: u8,
+        remote_no_more_data: bool,
+        token: bool,
+    ) -> Self {
+        Self::SetControlParameters(SetControlParameters {
+            time_sample,
+            duplex,
+            reserved,
+            remote_no_more_data,
+            token,
+        })
+    }
+
+    /// Same field order as [`SetReceiverParameters`].
+    pub fn set_receiver_parameters(
+        rx_mode: u8,
+        rx_data_rate: u8,
+        rx_modulation: bool,
+        rx_data_decoding: u8,
+        rx_frequency: u8,
+    ) -> Self {
+        Self::SetReceiverParameters(SetReceiverParameters {
+            rx_mode,
+            rx_data_rate,
+            rx_modulation,
+            rx_data_decoding,
+            rx_frequency,
+        })
+    }
+
+    pub fn set_vr(seq_ctrl_fsn: u8) -> Self {
+        Self::SetVR(SetVR { seq_ctrl_fsn })
+    }
+
+    /// Same field order as [`ReportRequest`].
+    pub fn report_request(
+        spare: u8,
+        status_report_request: u8,
+        time_tag_request: u8,
+        pcid0_plcw_request: bool,
+        pcid1_plcw_request: bool,
+    ) -> Self {
+        Self::ReportRequest(ReportRequest {
+            spare,
+            status_report_request,
+            time_tag_request,
+            pcid0_plcw_request,
+            pcid1_plcw_request,
+        })
+    }
+
+    /// Same field order as [`SetPLExtensions`].
+    pub fn set_pl_extensions(
+        direction: bool,
+        freq_table: bool,
+        rate_table: bool,
+        carrier_mod: u8,
+        data_mod: u8,
+        mode_select: u8,
+        scrambler: u8,
+        diff_mark_encoding: bool,
+        rs_code: bool,
+    ) -> Self {
+        Self::SetPLExtensions(SetPLExtensions {
+            direction,
+            freq_table,
+            rate_table,
+            carrier_mod,
+            data_mod,
+            mode_select,
+            scrambler,
+            diff_mark_encoding,
+            rs_code,
+        })
+    }
+
+    pub fn report_source_scid(source_scid: u16) -> Self {
+        Self::ReportSourceSCID(ReportSourceSCID { source_scid })
     }
 }
 
@@ -454,18 +565,10 @@ mod tests {
 
     #[test]
     fn type1_container_roundtrip_bytes() {
-        let container = DirectivesOrReportsUHF {
-            directives: vec![
-                Type1Directive::SetTransmitterParameters(SetTransmitterParameters {
-                    tx_mode: 1,
-                    tx_data_rate: 4,
-                    tx_modulation: false,
-                    tx_data_encoding: 0,
-                    tx_frequency: 2,
-                }),
-                Type1Directive::SetVR(SetVR { seq_ctrl_fsn: 0x5A }),
-            ],
-        };
+        let container = DirectivesOrReportsUHF::new(vec![
+            Type1Directive::set_transmitter_parameters(1, 4, false, 0, 2),
+            Type1Directive::set_vr(0x5A),
+        ]);
 
         let bytes = container.to_bytes().unwrap();
         let parsed = DirectivesOrReportsUHF::from_bytes(&bytes).unwrap();

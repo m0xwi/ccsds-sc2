@@ -475,9 +475,7 @@ mod tests {
     fn spdu_variable_type1_roundtrip() {
         const VECTOR_HEX: &str = "02602a";
 
-        let pdu = SPDU::type1(DirectivesOrReportsUHF {
-            directives: vec![Type1Directive::SetVR(SetVR { seq_ctrl_fsn: 42 })],
-        });
+        let pdu = SPDU::type1(DirectivesOrReportsUHF::single(Type1Directive::set_vr(42)));
 
         let bytes = pdu.to_bytes().unwrap();
         assert_spdu_bytes_match_vector(
