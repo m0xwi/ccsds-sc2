@@ -1,0 +1,18 @@
+---
+id: 56e34539-ff3d-4d19-8654-87fe5bd1f28f
+---
+flowchart TD
+  A[SPDU::from_bytes] --> B{format_id?}
+  B -->|0| C[Read header octet0]
+  C --> D[type_id = 011]
+  C --> E[len = octet0 & 0x0F]
+  E --> F[Check len == data.len - 1]
+  F --> G[Extract body data]
+  G --> H[FirstGenLunar::from_bytes]
+  H --> I[Parse Type4-specific fields]
+  I --> J[SPDU::VariableLengthSPDU::Type4]
+
+  P[SPDU::to_bytes Type4] --> Q[FirstGenLunar::to_bytes -> Vec<u8>]
+  Q --> R[Validate: body length <= 15]
+  R --> S[Calculate header based on type and length]
+  S --> T[Output = header concatenated with body]

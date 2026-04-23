@@ -1,0 +1,18 @@
+---
+id: 9df47d57-28f2-4d0d-9a8d-b3483ddbb078
+---
+flowchart TD
+  A["SPDU::from_bytes"] --> B{"format_id?"}
+  B -->|"0"| C["Read header octet0"]
+  C --> D["type_id = 001"]
+  C --> E["len = octet0 & 0x0F"]
+  E --> F["Check len == data.len - 1"]
+  F --> G["body = data[1..]"]
+  G --> H["Validate: body.len == 15"]
+  H --> I["TimeDistributionPDU::from_bytes"]
+  I --> J["Split: directive_type + clock[8] + delay[3] + light_time[3]"]
+  J --> K["SPDU::VariableLengthSPDU::Type2"]
+
+  P["SPDU::to_bytes Type2"] --> Q["TimeDistributionPDU::to_bytes -> 15 bytes"]
+  Q --> R["header = (001<<4) | 15"]
+  R --> S["out = header || body"]

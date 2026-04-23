@@ -2,7 +2,7 @@
 //!
 //! Goal: allow SPDU / Frame / other layers to interoperate via a minimal shared
 //! encode/decode + hex dump surface without pulling in external dependencies.
-
+// [MermaidChart: a2573561-f359-4881-ac2e-f23bbb90e75b]
 /// Encode a value into its on-wire octet representation.
 pub trait WireEncode {
     type Error;
@@ -24,10 +24,16 @@ pub trait Validate {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HexError {
     Empty,
+    // Giving an empty string with no actual hex digits is invalid.
     InvalidChar(char),
+    // Giving a string with an invalid character is invalid.
+    // This is because each hex digit is a character, so an invalid character is not a valid hex string.
     OddLength,
+    // Giving a string with an odd number of hex digits is invalid.
+    // This is because each hex digit is 4 bits, so an odd number of hex digits is not a valid hex string.
 }
 
+// This is a custom-helper that implements the display of the error message of the HexError enum.
 impl core::fmt::Display for HexError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
@@ -38,9 +44,11 @@ impl core::fmt::Display for HexError {
     }
 }
 
+// This is a custom-helper that implements the Error trait for the HexError enum.
 impl std::error::Error for HexError {}
 
 /// Convert bytes to lowercase hex (no separators).
+// This is a custom-helper that converts bytes to a hex string.
 pub fn bytes_to_hex(bytes: &[u8]) -> String {
     const LUT: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -51,6 +59,7 @@ pub fn bytes_to_hex(bytes: &[u8]) -> String {
     out
 }
 
+// This is a custom-helper that converts a character to a hex value.
 fn hex_val(c: char) -> Option<u8> {
     match c {
         '0'..='9' => Some((c as u8) - b'0'),

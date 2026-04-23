@@ -6,7 +6,7 @@
 
 // Each <DirectiveStruct> blocks has the bitfield mapping for its specific layout:
 // It is the exact wire layout for each directive type.
-
+// [MermaidChart: 0a617263-ce73-4273-84af-d352d183c9a9]
 #[derive(Debug, Clone, PartialEq)]
 pub struct DirectivesOrReportsUHF {
     pub directives: Vec<Type1Directive>,

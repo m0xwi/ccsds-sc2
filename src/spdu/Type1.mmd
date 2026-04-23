@@ -1,0 +1,21 @@
+---
+id: 0a617263-ce73-4273-84af-d352d183c9a9
+---
+flowchart TB
+    A["SPDU_from_bytes"] --> B{"format_id?"}
+    B -- 0 --> C["Read_header_octet0"]
+    C --> D["type_id_000"] & E["len_octet0_and_0x0F"]
+    E --> F["Check_len_data_len_minus_1"]
+    F --> G["body_data_1.."]
+    G --> H["DirectivesOrReportsUHF_from_bytes_body"]
+    H --> I["Validate_body_len_mod_2_equals_0"] & J["Validate_&lt;=_7_directive_words"] & K["Loop_read_each_u16_BE"]
+    K --> L["Type1Directive_from_u16_word"]
+    L --> M["Pick_variant_by_bits_15_to_13"]
+    M --> N["Parse_fields_into_SetVR_SetTxParams"]
+    N --> O["SPDU_VariableLengthSPDU_Type1"]
+    P["SPDU_to_bytes_Type1"] --> Q["DirectivesOrReportsUHF_to_bytes"]
+    Q --> R["Validate_&lt;=_7_directives"] & S["Each_directive_to_Type1Directive_to_u16"]
+    S --> T["Pack_fields_plus_directive_type_bits"]
+    T --> U["Write_u16_words_BE_body"]
+    U --> V["header_000_shift_4_or_body_len"]
+    V --> W["out_header_or_body"]

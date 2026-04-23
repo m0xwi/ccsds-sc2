@@ -1,0 +1,18 @@
+---
+id: a235c6a5-f4fb-428f-a467-f62310c9b7d8
+---
+flowchart TD
+  A[SPDU from bytes] --> B{format id?}
+  B -->|0| C[Read header octet0]
+  C --> D[type id = 100]
+  C --> E[len = octet0 & 0x0F]
+  E --> F[Check len == data.len - 1]
+  F --> G[Extract body]
+  G --> H[SecondGenLunar from bytes]
+  H --> I[Parse Type5-specific fields]
+  I --> J[SPDU VariableLengthSPDU Type5]
+
+  P[SPDU to bytes Type5] --> Q[SecondGenLunar to bytes -> Vec<u8>]
+  Q --> R[Validate body length]
+  R --> S[Create header]
+  S --> T[Output = header and body]

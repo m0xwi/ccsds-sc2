@@ -19,6 +19,7 @@
 // The one-way light time is how long it takes the signal to fly through space to the other side.
 
 // Together, the receiver can compute a very accurate time offset between the two transceivers' clocks.
+// [MermaidChart: 9df47d57-28f2-4d0d-9a8d-b3483ddbb078]
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimeDistributionPDU {

@@ -1,3 +1,5 @@
+// [MermaidChart: 56e34539-ff3d-4d19-8654-87fe5bd1f28f]
+
 use super::bits::{BitReader, BitWriter};
 
 #[derive(Debug, Clone, PartialEq)]
