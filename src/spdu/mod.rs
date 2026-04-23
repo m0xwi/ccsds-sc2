@@ -78,6 +78,90 @@ pub enum VariableLengthSPDU {
     Reserved(u8, Vec<u8>),         // type_id, raw data
 }
 
+impl SPDU {
+    /// Convenience constructor: wrap a Type F1 PLCW as a fixed-length SPDU.
+    pub fn f1(plcw: PLCW16Bit) -> Self {
+        SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw))
+    }
+
+    /// Convenience constructor: wrap a Type F2 PLCW as a fixed-length SPDU.
+    pub fn f2(plcw: PLCW32Bit) -> Self {
+        SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw))
+    }
+
+    /// Convenience constructor: wrap Type 1 directives as a variable-length SPDU.
+    pub fn type1(body: DirectivesOrReportsUHF) -> Self {
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Type1(body))
+    }
+
+    /// Convenience constructor: wrap Type 2 (Time Distribution) as a variable-length SPDU.
+    pub fn type2(body: TimeDistributionPDU) -> Self {
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Type2(body))
+    }
+
+    /// Convenience constructor: wrap Type 3 (Status Reports) as a variable-length SPDU.
+    pub fn type3(body: StatusReports) -> Self {
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Type3(body))
+    }
+
+    /// Convenience constructor: wrap Type 4 (First Gen Lunar) as a variable-length SPDU.
+    pub fn type4(body: FirstGenLunar) -> Self {
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Type4(body))
+    }
+
+    /// Convenience constructor: wrap Type 5 (Second Gen Lunar) as a variable-length SPDU.
+    pub fn type5(body: SecondGenLunar) -> Self {
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Type5(body))
+    }
+
+    /// Variable-length SPDU with an **unknown / reserved** type id (3-bit) and raw body (≤15 octets).
+    pub fn variable_reserved(type_id: u8, raw: Vec<u8>) -> Self {
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Reserved(type_id & 0x07, raw))
+    }
+}
+
+impl From<PLCW16Bit> for SPDU {
+    fn from(value: PLCW16Bit) -> Self {
+        SPDU::f1(value)
+    }
+}
+
+impl From<PLCW32Bit> for SPDU {
+    fn from(value: PLCW32Bit) -> Self {
+        SPDU::f2(value)
+    }
+}
+
+impl From<DirectivesOrReportsUHF> for SPDU {
+    fn from(value: DirectivesOrReportsUHF) -> Self {
+        SPDU::type1(value)
+    }
+}
+
+impl From<TimeDistributionPDU> for SPDU {
+    fn from(value: TimeDistributionPDU) -> Self {
+        SPDU::type2(value)
+    }
+}
+
+impl From<StatusReports> for SPDU {
+    fn from(value: StatusReports) -> Self {
+        SPDU::type3(value)
+    }
+}
+
+impl From<FirstGenLunar> for SPDU {
+    fn from(value: FirstGenLunar) -> Self {
+        SPDU::type4(value)
+    }
+}
+
+impl From<SecondGenLunar> for SPDU {
+    fn from(value: SecondGenLunar) -> Self {
+        SPDU::type5(value)
+    }
+}
+
 // These are the set of error types that SPDU parsing/encoding can return.
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpduError {
@@ -336,41 +420,54 @@ mod tests {
             pcid: true,
             retransmit_flag: true,
         };
-        let pdu = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw.clone()));
+        let pdu = SPDU::f1(plcw.clone());
         let bytes = pdu.to_bytes().unwrap();
         // Check the length of the bytes
         assert_eq!(bytes.len(), 2);
         // Check the bytes match the reference vector
-        assert_spdu_bytes_match_vector("spdu_fixed_f1_roundtrip (encode vs workshop vector)", &bytes, VECTOR_HEX);
+        assert_spdu_bytes_match_vector(
+            "spdu_fixed_f1_roundtrip (encode vs workshop vector)",
+            &bytes,
+            VECTOR_HEX,
+        );
 
         // Check the decoded value matches the constructed SPDU
         let parsed = SPDU::from_bytes(&bytes).unwrap();
         // Check the parsed value matches the constructed PLCW16Bit struct
-        assert_eq!(pdu, parsed, "round-trip: decoded value must match constructed SPDU");
+        assert_eq!(
+            pdu, parsed,
+            "round-trip: decoded value must match constructed SPDU"
+        );
     }
 
-    /// F2 round-trip with non-zero **reserved_spares** (includes bit 28 in the 9-bit spare field).
+    /// F2 round-trip against a frozen reference vector (workshop artifact style).
     #[test]
     fn spdu_fixed_f2_roundtrip() {
-        // Reference Vector
-        const VECTOR_HEX: &str = "d01e01f4";
+        // Reference Vector (workshop artifact #2): V(R)=500, expedited=6, PCID=1, retransmit=1.
+        const VECTOR_HEX: &str = "c01e01f4";
 
-        // Constructed PLCW32Bit struct
+        // Constructed PLCW32Bit struct (must encode to the reference vector above).
         let plcw = PLCW32Bit {
-            report_value: 1234,
-            expedited_frame_counter: 5,
-            pcid: false,
-            retransmit_flag: false,
-            // Previously `wait_flag: true` with other spares zero → bit 28 set → 9-bit field 0x80.
-            reserved_spares: 0x80,
+            report_value: 500,
+            expedited_frame_counter: 6,
+            pcid: true,
+            retransmit_flag: true,
+            reserved_spares: 0,
         };
-        let pdu = SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw.clone()));
+        let pdu = SPDU::f2(plcw.clone());
         let bytes = pdu.to_bytes().unwrap();
         assert_eq!(bytes.len(), 4);
-        assert_spdu_bytes_match_vector("spdu_fixed_f2_roundtrip (encode vs computed vector)", &bytes, VECTOR_HEX);
+        assert_spdu_bytes_match_vector(
+            "spdu_fixed_f2_roundtrip (encode vs computed vector)",
+            &bytes,
+            VECTOR_HEX,
+        );
 
         let parsed = SPDU::from_bytes(&bytes).unwrap();
-        assert_eq!(pdu, parsed, "round-trip: decoded value must match constructed PLCW");
+        assert_eq!(
+            pdu, parsed,
+            "round-trip: decoded value must match constructed PLCW"
+        );
     }
 
     /// **INTOP-1.3** — Variable-length Type 1, SET V(R), `SEQ_CTRL_FSN = 42` (workshop / FR-9.5 artifact #3).
@@ -378,9 +475,9 @@ mod tests {
     fn spdu_variable_type1_roundtrip() {
         const VECTOR_HEX: &str = "02602a";
 
-        let pdu = SPDU::VariableLengthSPDU(VariableLengthSPDU::Type1(DirectivesOrReportsUHF {
+        let pdu = SPDU::type1(DirectivesOrReportsUHF {
             directives: vec![Type1Directive::SetVR(SetVR { seq_ctrl_fsn: 42 })],
-        }));
+        });
 
         let bytes = pdu.to_bytes().unwrap();
         assert_spdu_bytes_match_vector(
@@ -390,6 +487,9 @@ mod tests {
         );
 
         let parsed = SPDU::from_bytes(&bytes).unwrap();
-        assert_eq!(parsed, pdu, "round-trip: decoded value must match constructed Type 1 SPDU");
+        assert_eq!(
+            parsed, pdu,
+            "round-trip: decoded value must match constructed Type 1 SPDU"
+        );
     }
 }

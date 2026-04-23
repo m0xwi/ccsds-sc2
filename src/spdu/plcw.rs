@@ -4,6 +4,12 @@
 //! - **F1**: 16-bit PLCW
 //! - **F2**: 32-bit PLCW
 
+// Type F1 PLCW: 16-bit PLCW
+// [MermaidChart: 1c9f1e91-a473-4bad-af41-88b234f1c3ea]
+
+// [MermaidChart: f57cc239-8ba6-4dd4-b0fd-bafeaedaf17c]
+// Type F2 PLCW: 32-bit PLCW
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct PLCW16Bit {
     pub report_value: u8,            // 8 bits (V(R))

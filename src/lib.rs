@@ -35,7 +35,6 @@
 //! **FARM-P** — Frame Acceptance and Reporting Mechanism; **PCID** — Physical Channel ID;
 //! **QoS** — Quality of Service (Expedited vs Sequence Controlled).
 
-
 // This is the top-level module for the crate.
 // It is the entry point for the crate.
 // It contains the public items that are exported from the crate.

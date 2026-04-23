@@ -1,3 +1,7 @@
+What are SPDUs?
+
+
+
 # How do you interface with the SPDU layer?
 The recommended way to interface with the SPDU layer is:
 
@@ -34,3 +38,9 @@ impl WireEncode for SPDU {
 
 pub mod wire;
 pub use wire::*;
+
+# The SPDU layer's "public boundary" is the SPDU enum and its encode/decode
+
+# How the other layers use the SPDU layer
+## How the frame layer sees the SPDU layer
+The 

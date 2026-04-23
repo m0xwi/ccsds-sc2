@@ -13,9 +13,8 @@
 //! message prints both **hex** and **raw byte arrays** side by side.
 
 use ccsds_sc2::{
-    DirectivesOrReportsUHF, FixedLengthSPDU, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU,
-    SetVR, SpduError, Type1Directive, VariableLengthSPDU, Version3Frame, bytes_to_hex,
-    hex_to_bytes,
+    DirectivesOrReportsUHF, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU, SetVR, SpduError,
+    Type1Directive, Version3Frame, bytes_to_hex, hex_to_bytes,
 };
 
 /// `vector_hex` is canonical lowercase hex (no separators), same style as [`bytes_to_hex`].
@@ -44,13 +43,13 @@ fn interop_fixed_length_f1_known_vector_bytes() {
     // Type F1 PLCW: V(R)=42, expedited=3, PCID=1, retransmit=true
     const VECTOR_HEX: &str = "b32a";
 
-    let spdu = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(PLCW16Bit {
+    let spdu = SPDU::f1(PLCW16Bit {
         report_value: 42,
         expedited_frame_counter: 3,
         reserved_spare: false,
         pcid: true,
         retransmit_flag: true,
-    }));
+    });
 
     let bytes = spdu.to_bytes().unwrap();
     assert_spdu_bytes_match_vector(
@@ -60,7 +59,10 @@ fn interop_fixed_length_f1_known_vector_bytes() {
     );
 
     let parsed = SPDU::from_bytes(&hex_to_bytes(VECTOR_HEX).unwrap()).unwrap();
-    assert_eq!(parsed, spdu, "decode(reference vector) must reproduce the constructed SPDU");
+    assert_eq!(
+        parsed, spdu,
+        "decode(reference vector) must reproduce the constructed SPDU"
+    );
 }
 
 #[test]
@@ -69,13 +71,13 @@ fn interop_fixed_length_f2_known_vector_bytes() {
     // Type F2 PLCW: V(R)=1234, expedited=5, PCID=0, retransmit=false
     const VECTOR_HEX: &str = "c00504d2";
 
-    let spdu = SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(PLCW32Bit {
+    let spdu = SPDU::f2(PLCW32Bit {
         report_value: 1234,
         expedited_frame_counter: 5,
         pcid: false,
         retransmit_flag: false,
         reserved_spares: 0,
-    }));
+    });
 
     let bytes = spdu.to_bytes().unwrap();
     assert_spdu_bytes_match_vector(
@@ -85,7 +87,10 @@ fn interop_fixed_length_f2_known_vector_bytes() {
     );
 
     let parsed = SPDU::from_bytes(&hex_to_bytes(VECTOR_HEX).unwrap()).unwrap();
-    assert_eq!(parsed, spdu, "decode(reference vector) must reproduce the constructed SPDU");
+    assert_eq!(
+        parsed, spdu,
+        "decode(reference vector) must reproduce the constructed SPDU"
+    );
 }
 
 #[test]
@@ -94,9 +99,9 @@ fn interop_variable_length_type1_set_vr_workshop_artifact() {
     // Variable-Length SPDU Type 1 Directive, SET V(R) with SEQ_CTRL_FSN=42
     const VECTOR_HEX: &str = "02602a";
 
-    let spdu = SPDU::VariableLengthSPDU(VariableLengthSPDU::Type1(DirectivesOrReportsUHF {
+    let spdu = SPDU::type1(DirectivesOrReportsUHF {
         directives: vec![Type1Directive::SetVR(SetVR { seq_ctrl_fsn: 42 })],
-    }));
+    });
 
     // Expected bytes:
     // header: type_id=0 (Type1), len=2 => 0x02
@@ -110,7 +115,10 @@ fn interop_variable_length_type1_set_vr_workshop_artifact() {
 
     // Parser accepts spaced hex; canonical form must still match VECTOR_HEX after round-trip.
     let parsed = SPDU::from_bytes(&hex_to_bytes("02 60 2a").unwrap()).unwrap();
-    assert_eq!(parsed, spdu, "decode(spaced hex of same vector) must reproduce the constructed SPDU");
+    assert_eq!(
+        parsed, spdu,
+        "decode(spaced hex of same vector) must reproduce the constructed SPDU"
+    );
     assert_spdu_bytes_match_vector(
         "interop_variable_length_type1_set_vr_workshop_artifact (re-encode vs vector)",
         &parsed.to_bytes().unwrap(),
@@ -122,13 +130,13 @@ fn interop_variable_length_type1_set_vr_workshop_artifact() {
 fn interop_fixed_length_workshop_artifacts_1_and_2() {
     // Artifact #1: Type F1 PLCW Report Value=127, Retransmit=false, PCID=0, Expedited Counter=3
     const ARTIFACT_1_HEX: &str = "837f";
-    let f1 = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(PLCW16Bit {
+    let f1 = SPDU::f1(PLCW16Bit {
         report_value: 127,
         expedited_frame_counter: 3,
         reserved_spare: false,
         pcid: false,
         retransmit_flag: false,
-    }));
+    });
     assert_spdu_bytes_match_vector(
         "workshop artifact #1 (F1 PLCW encode vs vector)",
         &f1.to_bytes().unwrap(),
@@ -137,13 +145,13 @@ fn interop_fixed_length_workshop_artifacts_1_and_2() {
 
     // Artifact #2: Type F2 PLCW Report Value=500, Retransmit=true, PCID=1, Expedited Counter=6
     const ARTIFACT_2_HEX: &str = "c01e01f4";
-    let f2 = SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(PLCW32Bit {
+    let f2 = SPDU::f2(PLCW32Bit {
         report_value: 500,
         expedited_frame_counter: 6,
         pcid: true,
         retransmit_flag: true,
         reserved_spares: 0,
-    }));
+    });
     assert_spdu_bytes_match_vector(
         "workshop artifact #2 (F2 PLCW encode vs vector)",
         &f2.to_bytes().unwrap(),
@@ -181,7 +189,7 @@ fn interop_plcw_generation_matches_spdu_encoding_shape() {
         pcid: false,
         retransmit_flag: false,
     };
-    let spdu = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw));
+    let spdu = SPDU::f1(plcw);
     assert_spdu_bytes_match_vector(
         "interop_plcw_generation_matches_spdu_encoding_shape (F1 as SPDU vs artifact #1)",
         &spdu.to_bytes().unwrap(),

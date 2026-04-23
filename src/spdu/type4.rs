@@ -59,7 +59,6 @@ pub struct Type4ReportSourceScid {
 
 // The following impl block define the bit-field implementations for the FirstGenLunar SPDU.
 
-
 impl FirstGenLunar {
     pub fn from_bytes(data: &[u8]) -> Result<Self, String> {
         if data.len() > 15 {

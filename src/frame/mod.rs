@@ -189,17 +189,17 @@ impl TryFrom<&[u8]> for Frame {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::spdu::{FixedLengthSPDU, PLCW16Bit, SPDU};
+    use crate::spdu::{PLCW16Bit, SPDU};
 
     #[test]
     fn frame_v3_pframe_roundtrip_with_crc_and_asm() {
-        let pdu = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(PLCW16Bit {
+        let pdu = SPDU::f1(PLCW16Bit {
             report_value: 7,
             expedited_frame_counter: 1,
             reserved_spare: false,
             pcid: false,
             retransmit_flag: false,
-        }));
+        });
 
         let f = Frame::V3(Version3Frame {
             kind: FrameKind::PFrame,

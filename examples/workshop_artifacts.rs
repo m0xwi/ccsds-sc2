@@ -1,7 +1,7 @@
 //! Hex dumps for CCSDS 235.1 competition workshop interoperability artifacts (deliverables.pdf §3.12).
 use ccsds_sc2::{
-    DEFAULT_ASM, DirectivesOrReportsUHF, FixedLengthSPDU, Frame, FrameKind, PLCW16Bit, PLCW32Bit,
-    Qos, SPDU, SetVR, Type1Directive, VariableLengthSPDU, Version3Frame,
+    DEFAULT_ASM, DirectivesOrReportsUHF, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU, SetVR,
+    Type1Directive, Version3Frame,
 };
 
 fn hex_line(label: &str, bytes: &[u8]) {
@@ -16,13 +16,13 @@ fn hex_line(label: &str, bytes: &[u8]) {
 fn main() {
     // 1 — Type F1 PLCW
     // Builds a typed SPDU value in memory
-    let a1 = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(PLCW16Bit {
+    let a1 = SPDU::f1(PLCW16Bit {
         report_value: 127,
         expedited_frame_counter: 3,
         reserved_spare: false,
         pcid: false,
         retransmit_flag: false,
-    }));
+    });
 
     // Turns the built SPDU into raw on-wire octets
     // The unwrap means "if the SPDU is invalid, panic"
@@ -31,20 +31,20 @@ fn main() {
     hex_line("1 F1 PLCW (SPDU wire)", &b1);
 
     // 2 — Type F2 PLCW (unspecified flags default false / zero)
-    let a2 = SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(PLCW32Bit {
+    let a2 = SPDU::f2(PLCW32Bit {
         report_value: 500,
         expedited_frame_counter: 6,
         pcid: true,
         retransmit_flag: true,
         reserved_spares: 0,
-    }));
+    });
     let b2 = a2.to_bytes().unwrap();
     hex_line("2 F2 PLCW (SPDU wire)", &b2);
 
     // 3 — Variable-length Type 1, SET V(R), SEQ_CTRL_FSN=42
-    let a3 = SPDU::VariableLengthSPDU(VariableLengthSPDU::Type1(DirectivesOrReportsUHF {
+    let a3 = SPDU::type1(DirectivesOrReportsUHF {
         directives: vec![Type1Directive::SetVR(SetVR { seq_ctrl_fsn: 42 })],
-    }));
+    });
     let b3 = a3.to_bytes().unwrap();
     hex_line("3 Type1 SET V(R) (SPDU wire)", &b3);
 
