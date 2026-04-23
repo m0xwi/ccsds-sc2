@@ -15,6 +15,7 @@ fn hex_line(label: &str, bytes: &[u8]) {
 
 fn main() {
     // 1 — Type F1 PLCW
+    // Builds a typed SPDU value in memory
     let a1 = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(PLCW16Bit {
         report_value: 127,
         expedited_frame_counter: 3,
@@ -22,7 +23,11 @@ fn main() {
         pcid: false,
         retransmit_flag: false,
     }));
+
+    // Turns the built SPDU into raw on-wire octets
+    // The unwrap means "if the SPDU is invalid, panic"
     let b1 = a1.to_bytes().unwrap();
+    // Prints a human-readable hex dump of the raw on-wire octets
     hex_line("1 F1 PLCW (SPDU wire)", &b1);
 
     // 2 — Type F2 PLCW (unspecified flags default false / zero)
@@ -31,8 +36,6 @@ fn main() {
         expedited_frame_counter: 6,
         pcid: true,
         retransmit_flag: true,
-        lockout_flag: false,
-        wait_flag: false,
         reserved_spares: 0,
     }));
     let b2 = a2.to_bytes().unwrap();

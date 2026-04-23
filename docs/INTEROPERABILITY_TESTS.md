@@ -16,6 +16,12 @@ cargo test --test interoperability
 - **Hex format (canonical)**: lowercase, no separators (e.g. `c00504d2`).
 - **Hex parser** accepts: `0x` prefixes, whitespace, and `_` separators (for copy/paste interoperability).
 
+## Reference vector vs encoder output
+
+Each SPDU test names a **reference vector** as a `const VECTOR_HEX` (or `ARTIFACT_*_HEX`) and compares it to `spdu.to_bytes()` using `assert_spdu_bytes_match_vector` in `tests/interoperability.rs`. On failure, the panic lists **both** the reference hex/bytes and the encoder output so you can see exactly what diverged from the frozen interoperability bytes.
+
+The same comparison pattern is used in `src/spdu/mod.rs` unit tests for workshop / INTOP vectors.
+
 ## Test vectors (SPDUs)
 
 ### Fixed-length SPDU: Type F1 (16-bit PLCW)

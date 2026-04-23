@@ -10,6 +10,17 @@
 //! Identified by **SPDU Type** in the header; Types **1–5** map to [`VariableLengthSPDU`].
 //! Type 1 directives/reports (e.g. SET V(R)) are in **Annex B**; Types 2–5 have annexes C/E/D.
 //!
+//! ## Workshop interoperability artifact (INTOP-1.3)
+//!
+//! **INTOP-1.3** — Variable-length SPDU **Type 1** directive **SET V(R)** with **`SEQ_CTRL_FSN = 42`**.
+//!
+//! On-wire bytes (3 octets), big-endian inside the Type 1 body:
+//! - **Octet 0** (variable-length header): SPDU type `000`, body length `2` → `0x02`.
+//! - **Octets 1–2** (one 16-bit directive word): SET V(R) → `0x60 0x2A`.
+//!
+//! **Canonical hex (no spaces):** `02602a` — same as **FR-9.5 workshop artifact #3** in the
+//! reference implementation requirements.
+//!
 //! # Wire format
 //!
 //! [`SPDU::to_bytes`] / [`SPDU::from_bytes`] use **big-endian** octet order for multi-byte fields.
@@ -18,6 +29,7 @@
 //!
 //! - COP-P consumes and generates PLCWs — [`crate::cop_p`].
 
+// [MermaidChart: f6bf1054-83bf-45b5-acda-145246876000]
 // This is the top-level SPDU API and defines the wire-format rules.
 // Wire-format rules are the exact bytes that define the byte layout of the SPDU on the wire
 // The wire-format rules include:
@@ -246,6 +258,9 @@ impl SPDU {
     }
 }
 
+// Implements the WireDecode trait for the SPDU enum
+// The SPDU already implements the from_bytes function, so we can use that to implement the WireDecode trait.
+// The trait implementations are thin wrappers: they do not add a second encoding path; they just forward to those methods so other code can depend on WireEncode/WireDecode without naming SPDU specifically.
 impl WireDecode for SPDU {
     type Error = SpduError;
 
@@ -254,6 +269,9 @@ impl WireDecode for SPDU {
     }
 }
 
+// Implements the WireEncode trait for the SPDU enum
+// The SPDU already implements the to_bytes function, so we can use that to implement the WireEncode trait.
+// The trait implementations are thin wrappers: they do not add a second encoding path; they just forward to those methods so other code can depend on WireEncode/WireDecode without naming SPDU specifically.
 impl WireEncode for SPDU {
     type Error = SpduError;
 
@@ -274,42 +292,104 @@ impl TryFrom<&[u8]> for SPDU {
 mod tests {
     use super::*;
 
-    #[test]
-    fn spdu_fixed_f1_roundtrip() {
-        let plcw = PLCW16Bit {
-            report_value: 127,
-            expedited_frame_counter: 3,
-            reserved_spare: false,
-            pcid: false,
-            retransmit_flag: false,
-        };
-        let pdu = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw.clone()));
-        let bytes = pdu.to_bytes().unwrap();
-        assert_eq!(bytes.len(), 2);
-        let parsed = SPDU::from_bytes(&bytes).unwrap();
-        assert_eq!(pdu, parsed);
-        if let SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(p)) = parsed {
-            assert_eq!(p, plcw);
-        } else {
-            panic!("wrong SPDU variant");
+    // Import the bytes_to_hex and hex_to_bytes functions from the wire crate
+    use crate::{bytes_to_hex, hex_to_bytes};
+
+    /// Compare encoder output to a frozen reference hex vector (same style as interoperability tests).
+
+    // The tests module block checks both directions.
+    // Encoder correctness: does SPDU::to_bytes() produce the expected on-wire bytes?
+    // Decoder correctness: does SPDU::from_bytes() reconstruct the same SPDU value?
+    fn assert_spdu_bytes_match_vector(test_label: &str, actual: &[u8], vector_hex: &str) {
+        // Convert the reference vector hex to bytes
+        // If the conversion fails, panic with a message that includes the test label and the invalid hex
+        let vector_bytes = hex_to_bytes(vector_hex).unwrap_or_else(|e| {
+            panic!("{test_label}: invalid reference vector hex `{vector_hex}`: {e}");
+        });
+
+        let actual_hex = bytes_to_hex(actual);
+        if actual != vector_bytes.as_slice() {
+            panic!(
+                "{test_label}: encoder output does not match reference test vector.\n\
+                 • **Reference vector** (hex): `{vector_hex}`\n\
+                 • **Reference bytes**       : {vector_bytes:02x?}\n\
+                 • **Encoder output** (hex): `{actual_hex}`\n\
+                 • **Encoder bytes**        : {actual:02x?}",
+                vector_bytes = vector_bytes,
+                actual_hex = actual_hex,
+                actual = actual,
+            );
         }
     }
 
+    /// Workshop **artifact #1** shape: F1 PLCW, report=127, expedited=3, PCID=1, retransmit=1.
     #[test]
-    fn spdu_fixed_f2_roundtrip() {
-        let plcw = PLCW32Bit {
-            report_value: 500,
-            expedited_frame_counter: 6,
+    fn spdu_fixed_f1_roundtrip() {
+        // Reference Vector
+        const VECTOR_HEX: &str = "b32a";
+
+        // Constructed PLCW16Bit struct
+        let plcw = PLCW16Bit {
+            report_value: 42,
+            expedited_frame_counter: 3,
+            reserved_spare: false,
             pcid: true,
             retransmit_flag: true,
-            lockout_flag: false,
-            wait_flag: true,
-            reserved_spares: 0,
+        };
+        let pdu = SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw.clone()));
+        let bytes = pdu.to_bytes().unwrap();
+        // Check the length of the bytes
+        assert_eq!(bytes.len(), 2);
+        // Check the bytes match the reference vector
+        assert_spdu_bytes_match_vector("spdu_fixed_f1_roundtrip (encode vs workshop vector)", &bytes, VECTOR_HEX);
+
+        // Check the decoded value matches the constructed SPDU
+        let parsed = SPDU::from_bytes(&bytes).unwrap();
+        // Check the parsed value matches the constructed PLCW16Bit struct
+        assert_eq!(pdu, parsed, "round-trip: decoded value must match constructed SPDU");
+    }
+
+    /// F2 round-trip with non-zero **reserved_spares** (includes bit 28 in the 9-bit spare field).
+    #[test]
+    fn spdu_fixed_f2_roundtrip() {
+        // Reference Vector
+        const VECTOR_HEX: &str = "d01e01f4";
+
+        // Constructed PLCW32Bit struct
+        let plcw = PLCW32Bit {
+            report_value: 1234,
+            expedited_frame_counter: 5,
+            pcid: false,
+            retransmit_flag: false,
+            // Previously `wait_flag: true` with other spares zero → bit 28 set → 9-bit field 0x80.
+            reserved_spares: 0x80,
         };
         let pdu = SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw.clone()));
         let bytes = pdu.to_bytes().unwrap();
         assert_eq!(bytes.len(), 4);
+        assert_spdu_bytes_match_vector("spdu_fixed_f2_roundtrip (encode vs computed vector)", &bytes, VECTOR_HEX);
+
         let parsed = SPDU::from_bytes(&bytes).unwrap();
-        assert_eq!(pdu, parsed);
+        assert_eq!(pdu, parsed, "round-trip: decoded value must match constructed PLCW");
+    }
+
+    /// **INTOP-1.3** — Variable-length Type 1, SET V(R), `SEQ_CTRL_FSN = 42` (workshop / FR-9.5 artifact #3).
+    #[test]
+    fn spdu_variable_type1_roundtrip() {
+        const VECTOR_HEX: &str = "02602a";
+
+        let pdu = SPDU::VariableLengthSPDU(VariableLengthSPDU::Type1(DirectivesOrReportsUHF {
+            directives: vec![Type1Directive::SetVR(SetVR { seq_ctrl_fsn: 42 })],
+        }));
+
+        let bytes = pdu.to_bytes().unwrap();
+        assert_spdu_bytes_match_vector(
+            "spdu_variable_type1_roundtrip / INTOP-1.3 (encode vs workshop vector)",
+            &bytes,
+            VECTOR_HEX,
+        );
+
+        let parsed = SPDU::from_bytes(&bytes).unwrap();
+        assert_eq!(parsed, pdu, "round-trip: decoded value must match constructed Type 1 SPDU");
     }
 }

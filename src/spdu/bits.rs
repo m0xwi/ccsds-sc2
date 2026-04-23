@@ -11,6 +11,7 @@
 // For example:
 // If you have a 3-bit field followed immediately by a 5-bit field, you can read the full byte fine.
 // However, if you have a 6-bit field, the next field starts in the middle of a byte on the 7th bit, and so on.
+// [MermaidChart: afde0e54-f198-4093-b259-e210bf94554d]
 pub(crate) struct BitReader<'a> {
     data: &'a [u8],
     bit_pos: usize, // 0..=(data.len()*8)

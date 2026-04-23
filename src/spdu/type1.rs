@@ -1,3 +1,12 @@
+// The container-level logic for the whole Type-1 SPDU is DirectivesOrReportUHF.
+// It turns a Type-1 body into structured directives and back.
+
+// The Type1Directive is the dispatch layer between the raw 16-bit words and specific directive structs.
+// Its role is to decode/encode the directive tag and route it to the right fornat.
+
+// Each <DirectiveStruct> blocks has the bitfield mapping for its specific layout:
+// It is the exact wire layout for each directive type.
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DirectivesOrReportsUHF {
     pub directives: Vec<Type1Directive>,

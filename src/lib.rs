@@ -35,11 +35,19 @@
 //! **FARM-P** — Frame Acceptance and Reporting Mechanism; **PCID** — Physical Channel ID;
 //! **QoS** — Quality of Service (Expedited vs Sequence Controlled).
 
+
+// This is the top-level module for the crate.
+// It is the entry point for the crate.
+// It contains the public items that are exported from the crate.
+
+// Declares and includes the modules in the order they are used.
 pub mod cop_p;
 pub mod frame;
 pub mod spdu;
 pub mod wire;
 
+// Exports the public items from the modules.
+// Allows these items to be used in a shorter path... e.g. use crate::spdu::*;
 pub use cop_p::*;
 pub use frame::*;
 pub use spdu::*;

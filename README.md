@@ -40,4 +40,3 @@ Print a small SPDU/hex demo:
 ```powershell
 cargo run --example spdu_hex_demo
 ```
-

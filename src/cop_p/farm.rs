@@ -13,8 +13,6 @@ pub struct FarmP {
     pub r_s: bool, // retransmit needed flag (copied into PLCW)
     pub v_r: Seq,
     pub expedited_frame_counter: u8, // modulo-8
-    pub lockout_flag: bool,
-    pub wait_flag: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,8 +30,6 @@ impl FarmP {
             r_s: false,
             v_r: Seq(0),
             expedited_frame_counter: 0,
-            lockout_flag: false,
-            wait_flag: false,
         }
     }
 
@@ -76,8 +72,6 @@ impl FarmP {
             expedited_frame_counter: self.expedited_frame_counter,
             pcid,
             retransmit_flag: self.r_s,
-            lockout_flag: self.lockout_flag,
-            wait_flag: self.wait_flag,
             reserved_spares: 0,
         }
     }

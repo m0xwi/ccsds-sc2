@@ -19,12 +19,11 @@ pub struct PLCW32Bit {
     pub expedited_frame_counter: u8, // 3 bits
     pub pcid: bool,                  // 1 bit
     pub retransmit_flag: bool,       // 1 bit
-    /// Within the reserved spares region; required by competition requirements.
-    pub lockout_flag: bool,
-    /// Within the reserved spares region; required by competition requirements.
-    pub wait_flag: bool,
-    /// Remaining spare bits (excluding lockout/wait).
-    pub reserved_spares: u8,
+    /// Bits **21–29** of the 32-bit Type F2 PLCW word (reserved spares region on the wire).
+    ///
+    /// This is a single field so callers do not model individual spare names; use **0** when
+    /// unspecified. Valid range is **0..=0x1FF** (9 bits).
+    pub reserved_spares: u16,
 }
 
 impl PLCW16Bit {
@@ -71,24 +70,20 @@ impl PLCW32Bit {
         if self.expedited_frame_counter > 7 {
             return Err("F2 expedited_frame_counter must be 0..7");
         }
-        if self.reserved_spares > 0x7F {
-            return Err("F2 reserved_spares must be 0..127");
+        if self.reserved_spares > 0x1FF {
+            return Err("F2 reserved_spares must be 0..=0x1FF (9 bits)");
         }
         Ok(())
     }
 
     pub fn from_u32(word: u32) -> Self {
-        let lockout_flag = (word & (1 << 29)) != 0;
-        let wait_flag = (word & (1 << 28)) != 0;
-        let reserved_spares = ((word >> 21) & 0x7F) as u8;
+        let reserved_spares = ((word >> 21) & 0x1FF) as u16;
 
         PLCW32Bit {
             report_value: (word & 0xFFFF) as u16,
             expedited_frame_counter: ((word >> 16) & 0x07) as u8,
             pcid: (word & (1 << 19)) != 0,
             retransmit_flag: (word & (1 << 20)) != 0,
-            lockout_flag,
-            wait_flag,
             reserved_spares,
         }
     }
@@ -104,13 +99,7 @@ impl PLCW32Bit {
         if self.retransmit_flag {
             word |= 1 << 20;
         }
-        if self.lockout_flag {
-            word |= 1 << 29;
-        }
-        if self.wait_flag {
-            word |= 1 << 28;
-        }
-        word |= ((self.reserved_spares as u32) & 0x7F) << 21;
+        word |= ((self.reserved_spares as u32) & 0x1FF) << 21;
         word |= 1 << 31; // format_id=1
         word |= 1 << 30; // type_id=1
         word
