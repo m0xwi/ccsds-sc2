@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-03-07T12:00:00Z",
+  "spdu_type": "F1",
+  "spdu_id": "test_001",
+  "spdu_bytes_hex": "b32a",
+  "fields": {
+    "report_value": 42,
+    "expedited_counter": 3,
+    "pcid": true,
+    "retransmit_flag": true
+  },
+  "notes": "Interoperability brief: Type F1 PLCW with V(R)=42, expedited=3, PCID=1, retransmit=true."
+}
+

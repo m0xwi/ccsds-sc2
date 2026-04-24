@@ -1,3 +1,5 @@
+# Documentation (API, architecture, user guide)
+
 # Documentation index (`ccsds-sc2`)
 
 | Document | Description |

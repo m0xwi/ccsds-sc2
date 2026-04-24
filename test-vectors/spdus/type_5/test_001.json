@@ -1,0 +1,16 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-04-24T12:00:00Z",
+  "spdu_type": "1",
+  "spdu_id": "test_001",
+  "spdu_bytes_hex": "02602a",
+  "fields": {
+    "directives": [
+      {
+        "directive": "SET_VR",
+        "seq_ctrl_fsn": 42
+      }
+    ]
+  },
+  "notes": "Workshop artifact style: Variable-length SPDU Type 1 with a single SET V(R) directive (SEQ_CTRL_FSN=42)."
+}

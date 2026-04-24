@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-03-07T12:00:00Z",
+  "spdu_type": "F2",
+  "spdu_id": "test_001",
+  "spdu_bytes_hex": "c00504d2",
+  "fields": {
+    "report_value": 1234,
+    "expedited_counter": 5,
+    "pcid": false,
+    "retransmit_flag": false
+  },
+  "notes": "Interoperability brief: Type F2 PLCW with V(R)=1234, expedited=5, PCID=0, retransmit=false."
+}
+
