@@ -72,9 +72,9 @@ implementations.
 | 10 - Documentation & Examples  | [ ] Complete / [ ] Partial / [ ] Not Attempted |
 
 ## Validation Results
-
+```
 ### Gateway 1: SPDU Layer
-
+```
 | Check                                                     | Pass/Fail          | Evidence |
 |-----------------------------------------------------------|--------------------|----------|
 | Type F1 PLCW encodes/decodes correctly                    |--------------------|----------|      
@@ -86,9 +86,9 @@ implementations.
 | Malformed SPDUs rejected gracefully                       |--------------------|----------|
 | Encoding/decoding < 1 ms per SPDU                         |--------------------|----------|
 
-
+```
 ### Gateway 2: COP-P Layer
-
+```
 | Check                                           | Pass/Fail          | Evidence |
 |-------------------------------------------------|--------------------|----------|
 | FOP-P maintains V(S) correctly                  |--------------------|----------|      
@@ -104,9 +104,9 @@ implementations.
 | 8-bit sequence numbers (modulo-256)             |--------------------|----------|
 | 16-bit sequence numbers (modulo-65536)          |--------------------|----------|
 | Persistence mechanism implemented               |--------------------|----------|
-
+```
 ### Gateway 3: Frame Layer
-
+```
 | Check                                | Pass/Fail          | Evidence |
 |--------------------------------------|--------------------|----------|
 | P-frames transmitted correctly       |--------------------|----------|      
@@ -120,9 +120,9 @@ implementations.
 | CRC-16 validation works              |--------------------|----------|
 | Malformed frames rejected            |--------------------|----------|
 | Frame processing < 1 ms per frame    |--------------------|----------|
-
+```
 ### Gateway 4: Physical Layer Abstraction
-
+```
 | Check                                 | Pass/Fail          | Evidence |
 |---------------------------------------|--------------------|----------|
 | Physical Channel interfaced defined   |--------------------|----------|      
@@ -131,9 +131,9 @@ implementations.
 | UDP channel enables loss testing      |--------------------|----------|
 | PCID support works (channels 0 and 1) |--------------------|----------|
 | Channel status reporting works        |--------------------|----------|
-
+```
 ### Gateway 5: State Machine
-
+```
 | Check                                                                  | Pass/Fail          | Evidence |
 |------------------------------------------------------------------------|--------------------|----------|
 | All states implemented (Init, Hailing, Data, Reconneting, Termination) |--------------------|----------|      
