@@ -1,0 +1,27 @@
+// [MermaidChart: afde0e54-f198-4093-b259-e210bf94554d]
+---
+config:
+  theme: redux
+id: afde0e54-f198-4093-b259-e210bf94554d
+---
+flowchart TB
+        
+        subgraph Bit-level helper
+        Helper(["Bit-level helper"])
+        end
+        subgraph Bit Reader
+        Helper --> a1{"BitReader"}
+        a1 --> a2{"New"}
+        a1 --> a3{"RemainingBits"}
+        a1 --> a4{"ReadBitsU64"}
+        a1 --> a5{"ReadBitsBytes"}
+        end
+        subgraph Bit Writer
+        Helper --> b1{"BitWriter"}
+        b1 --> b2{"New"}
+        b1 --> b3("BitLen")
+        b1 --> b4("WriteBitsU64")
+        b1 --> b5("WriteBit")
+        b1 --> b6("WriteBitBytes")
+        b1 --> b7("IntoBytesPadded")
+        end
