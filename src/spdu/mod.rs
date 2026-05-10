@@ -485,7 +485,9 @@ mod tests {
         });
         assert!(matches!(
             f1.to_bytes(),
-            Err(SpduError::Invalid("F1 expedited_frame_counter must be 0..7"))
+            Err(SpduError::Invalid(
+                "F1 expedited_frame_counter must be 0..7"
+            ))
         ));
 
         let f2_bad_counter = SPDU::f2(PLCW32Bit {
@@ -497,7 +499,9 @@ mod tests {
         });
         assert!(matches!(
             f2_bad_counter.to_bytes(),
-            Err(SpduError::Invalid("F2 expedited_frame_counter must be 0..7"))
+            Err(SpduError::Invalid(
+                "F2 expedited_frame_counter must be 0..7"
+            ))
         ));
 
         let f2_bad_spares = SPDU::f2(PLCW32Bit {
