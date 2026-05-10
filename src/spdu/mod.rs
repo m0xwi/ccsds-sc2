@@ -298,12 +298,16 @@ impl SPDU {
     /// Encode an SPDU to its on-wire big-endian byte representation.
     pub fn to_bytes(&self) -> Result<Vec<u8>, SpduError> {
         match self {
-            SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw)) => {
-                Ok(plcw.to_u16().to_be_bytes().to_vec())
-            }
-            SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw)) => {
-                Ok(plcw.to_u32().to_be_bytes().to_vec())
-            }
+            SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw)) => Ok(plcw
+                .to_u16()
+                .map_err(SpduError::Invalid)?
+                .to_be_bytes()
+                .to_vec()),
+            SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw)) => Ok(plcw
+                .to_u32()
+                .map_err(SpduError::Invalid)?
+                .to_be_bytes()
+                .to_vec()),
             SPDU::VariableLengthSPDU(vl) => {
                 let (type_id, body): (u8, Vec<u8>) = match vl {
                     VariableLengthSPDU::Type1(x) => (
@@ -468,6 +472,47 @@ mod tests {
             pdu, parsed,
             "round-trip: decoded value must match constructed PLCW"
         );
+    }
+
+    #[test]
+    fn spdu_rejects_invalid_fixed_plcw_fields() {
+        let f1 = SPDU::f1(PLCW16Bit {
+            report_value: 1,
+            expedited_frame_counter: 8,
+            reserved_spare: false,
+            pcid: false,
+            retransmit_flag: false,
+        });
+        assert!(matches!(
+            f1.to_bytes(),
+            Err(SpduError::Invalid("F1 expedited_frame_counter must be 0..7"))
+        ));
+
+        let f2_bad_counter = SPDU::f2(PLCW32Bit {
+            report_value: 1,
+            expedited_frame_counter: 8,
+            pcid: false,
+            retransmit_flag: false,
+            reserved_spares: 0,
+        });
+        assert!(matches!(
+            f2_bad_counter.to_bytes(),
+            Err(SpduError::Invalid("F2 expedited_frame_counter must be 0..7"))
+        ));
+
+        let f2_bad_spares = SPDU::f2(PLCW32Bit {
+            report_value: 1,
+            expedited_frame_counter: 0,
+            pcid: false,
+            retransmit_flag: false,
+            reserved_spares: 0x200,
+        });
+        assert!(matches!(
+            f2_bad_spares.to_bytes(),
+            Err(SpduError::Invalid(
+                "F2 reserved_spares must be 0..=0x1FF (9 bits)"
+            ))
+        ));
     }
 
     /// **INTOP-1.3** — Variable-length Type 1, SET V(R), `SEQ_CTRL_FSN = 42` (workshop / FR-9.5 artifact #3).
