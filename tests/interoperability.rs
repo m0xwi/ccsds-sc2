@@ -13,8 +13,10 @@
 //! message prints both **hex** and **raw byte arrays** side by side.
 
 use ccsds_sc2::{
-    DirectivesOrReportsUHF, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU, SpduError,
-    Type1Directive, Version3Frame, bytes_to_hex, hex_to_bytes,
+    DirectivesOrReportsUHF, FirstGenLunar, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU,
+    SecondGenLunar, SpduError, TimeDistributionPDU, Type1Directive, Type4Directive,
+    Type4ReportRequest, Type4SetVR, Type5Directive, Type5PnRanging, Type5ReportRequest,
+    Version3Frame, bytes_to_hex, hex_to_bytes,
 };
 
 /// `vector_hex` is canonical lowercase hex (no separators), same style as [`bytes_to_hex`].
@@ -225,4 +227,105 @@ fn interop_frame_v3_pframe_contains_spdu_bytes() {
         }
         _ => panic!("expected v3"),
     }
+}
+
+fn assert_binary_export_matches_spdu(
+    test_label: &str,
+    export: &[u8],
+    expected_type: &[u8; 4],
+    spdu: &SPDU,
+) {
+    assert!(
+        export.len() >= 64,
+        "{test_label}: binary export must include 64-byte header"
+    );
+    assert_eq!(&export[0..8], b"CCSDS\0\0\0", "{test_label}: magic");
+    assert_eq!(
+        u32::from_be_bytes(export[8..12].try_into().unwrap()),
+        1,
+        "{test_label}: version"
+    );
+    assert_eq!(&export[12..16], expected_type, "{test_label}: SPDU type");
+    assert!(
+        export[28..64].iter().all(|b| *b == 0),
+        "{test_label}: reserved header bytes must be zero"
+    );
+
+    let expected_payload = spdu.to_bytes().unwrap();
+    assert_eq!(
+        u32::from_be_bytes(export[16..20].try_into().unwrap()) as usize,
+        expected_payload.len(),
+        "{test_label}: payload length"
+    );
+    assert_eq!(
+        &export[64..],
+        expected_payload.as_slice(),
+        "{test_label}: payload bytes must match encoder output"
+    );
+    assert_eq!(
+        SPDU::from_bytes(&export[64..]).unwrap(),
+        *spdu,
+        "{test_label}: payload must decode as declared SPDU"
+    );
+}
+
+#[test]
+fn interop_spdu_test_vector_exports_match_encoder() {
+    let type2 = SPDU::type2(TimeDistributionPDU {
+        directive_type: 1,
+        transceiver_clock: [1, 2, 3, 4, 5, 6, 7, 8],
+        send_side_delay: [9, 10, 11],
+        one_way_light_time: [12, 13, 14],
+    });
+    assert_binary_export_matches_spdu(
+        "test-vectors/spdus/type_2/test_001.bin",
+        include_bytes!("../test-vectors/spdus/type_2/test_001.bin"),
+        b"2\0\0\0",
+        &type2,
+    );
+
+    let type4 = SPDU::type4(FirstGenLunar {
+        directives: vec![
+            Type4Directive::ReportRequest(Type4ReportRequest {
+                pcid0_plcw_request: true,
+                pcid1_plcw_request: false,
+                time_tag_sample_request: 0x12,
+                status_report_request: 0x03,
+            }),
+            Type4Directive::SetVR(Type4SetVR { seq_ctrl_fsn: 0x5A }),
+        ],
+    });
+    assert_binary_export_matches_spdu(
+        "test-vectors/spdus/type_4/test_001.bin",
+        include_bytes!("../test-vectors/spdus/type_4/test_001.bin"),
+        b"4\0\0\0",
+        &type4,
+    );
+
+    let type5 = SPDU::type5(SecondGenLunar {
+        directives: vec![
+            Type5Directive::PnRanging(Type5PnRanging {
+                mode_type: 2,
+                ranging_code: 0,
+                chip_rate_k: 6,
+                chip_rate_l: 0x1234 & 0x3FFF,
+                chip_rate_m: 0x2345 & 0x3FFF,
+                ranging_mod_index: 4,
+                pn_epoch_time_tag: [1, 2, 3, 4, 5, 6],
+                status_report_request: 1,
+            }),
+            Type5Directive::ReportRequest(Type5ReportRequest {
+                pcid0_plcw_request: false,
+                pcid1_plcw_request: true,
+                time_tag_sample_request: 7,
+                status_report_request: 0,
+            }),
+        ],
+    });
+    assert_binary_export_matches_spdu(
+        "test-vectors/spdus/type_5/test_001.bin",
+        include_bytes!("../test-vectors/spdus/type_5/test_001.bin"),
+        b"5\0\0\0",
+        &type5,
+    );
 }
