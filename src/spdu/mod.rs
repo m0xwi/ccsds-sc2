@@ -298,12 +298,16 @@ impl SPDU {
     /// Encode an SPDU to its on-wire big-endian byte representation.
     pub fn to_bytes(&self) -> Result<Vec<u8>, SpduError> {
         match self {
-            SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw)) => {
-                Ok(plcw.to_u16().to_be_bytes().to_vec())
-            }
-            SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw)) => {
-                Ok(plcw.to_u32().to_be_bytes().to_vec())
-            }
+            SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw)) => Ok(plcw
+                .to_u16()
+                .map_err(SpduError::Invalid)?
+                .to_be_bytes()
+                .to_vec()),
+            SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw)) => Ok(plcw
+                .to_u32()
+                .map_err(SpduError::Invalid)?
+                .to_be_bytes()
+                .to_vec()),
             SPDU::VariableLengthSPDU(vl) => {
                 let (type_id, body): (u8, Vec<u8>) = match vl {
                     VariableLengthSPDU::Type1(x) => (
@@ -467,6 +471,40 @@ mod tests {
         assert_eq!(
             pdu, parsed,
             "round-trip: decoded value must match constructed PLCW"
+        );
+    }
+
+    #[test]
+    fn spdu_rejects_invalid_f1_plcw_instead_of_truncating() {
+        let pdu = SPDU::f1(PLCW16Bit {
+            report_value: 42,
+            expedited_frame_counter: 8,
+            reserved_spare: false,
+            pcid: false,
+            retransmit_flag: false,
+        });
+
+        let err = pdu.to_bytes().unwrap_err();
+        assert_eq!(
+            err,
+            SpduError::Invalid("F1 expedited_frame_counter must be 0..7")
+        );
+    }
+
+    #[test]
+    fn spdu_rejects_invalid_f2_plcw_instead_of_truncating() {
+        let pdu = SPDU::f2(PLCW32Bit {
+            report_value: 42,
+            expedited_frame_counter: 1,
+            pcid: false,
+            retransmit_flag: false,
+            reserved_spares: 0x200,
+        });
+
+        let err = pdu.to_bytes().unwrap_err();
+        assert_eq!(
+            err,
+            SpduError::Invalid("F2 reserved_spares must be 0..=0x1FF (9 bits)")
         );
     }
 
