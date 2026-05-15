@@ -245,7 +245,7 @@ impl SecondGenLunar {
                     w.write_bits_u64((x.chip_rate_l & 0x3FFF) as u64, 14);
                     w.write_bits_u64((x.chip_rate_m & 0x3FFF) as u64, 14);
                     w.write_bits_u64((x.ranging_mod_index & 0x07) as u64, 3);
-                    w.write_bits_bytes(&x.pn_epoch_time_tag, 48);
+                    w.write_bits_bytes(&x.pn_epoch_time_tag, 48)?;
                     w.write_bits_u64((x.status_report_request & 0x1F) as u64, 5);
                     w.write_bits_u64(0, 2); // spares
                 }
@@ -255,7 +255,7 @@ impl SecondGenLunar {
                     bit_len,
                 } => {
                     w.write_bits_u64((*directive_name & 0x07) as u64, 3);
-                    w.write_bits_bytes(raw_bits, *bit_len);
+                    w.write_bits_bytes(raw_bits, *bit_len)?;
                 }
             }
         }
@@ -297,5 +297,21 @@ mod tests {
         let bytes = lunar.to_bytes().unwrap();
         let parsed = SecondGenLunar::from_bytes(&bytes).unwrap();
         assert_eq!(lunar, parsed);
+    }
+
+    #[test]
+    fn type5_reserved_encoder_rejects_short_raw_bits() {
+        let lunar = SecondGenLunar {
+            directives: vec![Type5Directive::Reserved {
+                directive_name: 0b111,
+                raw_bits: vec![0x80],
+                bit_len: 9,
+            }],
+        };
+
+        assert_eq!(
+            lunar.to_bytes().unwrap_err(),
+            "not enough source bits supplied"
+        );
     }
 }
