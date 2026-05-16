@@ -13,9 +13,10 @@
 //! message prints both **hex** and **raw byte arrays** side by side.
 
 use ccsds_sc2::{
-    DirectivesOrReportsUHF, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU, SpduError,
-    Type1Directive, Version3Frame, bytes_to_hex, hex_to_bytes,
+    DirectivesOrReportsUHF, FixedLengthSPDU, Frame, FrameKind, PLCW16Bit, PLCW32Bit, Qos, SPDU,
+    SpduError, Type1Directive, VariableLengthSPDU, Version3Frame, bytes_to_hex, hex_to_bytes,
 };
+use std::fs;
 
 /// `vector_hex` is canonical lowercase hex (no separators), same style as [`bytes_to_hex`].
 fn assert_spdu_bytes_match_vector(test_label: &str, actual: &[u8], vector_hex: &str) {
@@ -34,6 +35,31 @@ fn assert_spdu_bytes_match_vector(test_label: &str, actual: &[u8], vector_hex: &
             actual_hex = actual_hex,
             actual = actual,
         );
+    }
+}
+
+fn json_string_value(json: &str, key: &str) -> String {
+    let needle = format!("\"{key}\": \"");
+    let start = json
+        .find(&needle)
+        .unwrap_or_else(|| panic!("missing JSON string field `{key}`"))
+        + needle.len();
+    let rest = &json[start..];
+    let end = rest
+        .find('"')
+        .unwrap_or_else(|| panic!("unterminated JSON string field `{key}`"));
+    rest[..end].to_string()
+}
+
+fn assert_spdu_variant_matches_type(spdu: SPDU, expected_type: &str) {
+    match (expected_type, spdu) {
+        ("F1", SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(_))) => {}
+        ("F2", SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(_))) => {}
+        ("1", SPDU::VariableLengthSPDU(VariableLengthSPDU::Type1(_))) => {}
+        ("2", SPDU::VariableLengthSPDU(VariableLengthSPDU::Type2(_))) => {}
+        ("4", SPDU::VariableLengthSPDU(VariableLengthSPDU::Type4(_))) => {}
+        ("5", SPDU::VariableLengthSPDU(VariableLengthSPDU::Type5(_))) => {}
+        (expected, actual) => panic!("expected SPDU type `{expected}`, decoded {actual:?}"),
     }
 }
 
@@ -224,5 +250,61 @@ fn interop_frame_v3_pframe_contains_spdu_bytes() {
             assert_eq!(v3.payload, spdu_bytes);
         }
         _ => panic!("expected v3"),
+    }
+}
+
+#[test]
+fn interop_spdu_test_vector_exports_match_metadata() {
+    let cases = [
+        ("type_f1", "F1", "b32a"),
+        ("type_f2", "F2", "c00504d2"),
+        ("type_1", "1", "02602a"),
+        ("type_2", "2", "1f0102030405060708090a0b0c0d0e0f"),
+        ("type_4", "4", "32402a"),
+        ("type_5", "5", "42402a"),
+    ];
+
+    for (dir, expected_type, expected_hex) in cases {
+        let json_path = format!("test-vectors/spdus/{dir}/test_001.json");
+        let bin_path = format!("test-vectors/spdus/{dir}/test_001.bin");
+
+        let json = fs::read_to_string(&json_path).expect("vector JSON must be readable");
+        assert_eq!(json_string_value(&json, "spdu_type"), expected_type);
+        assert_eq!(json_string_value(&json, "spdu_bytes_hex"), expected_hex);
+
+        let payload = hex_to_bytes(expected_hex).expect("expected vector hex must be valid");
+        let decoded = SPDU::from_bytes(&payload).expect("vector payload must decode as an SPDU");
+        assert_spdu_variant_matches_type(decoded, expected_type);
+
+        let export = fs::read(&bin_path).expect("binary vector export must be readable");
+        assert!(
+            export.len() >= 64,
+            "{bin_path}: binary export must include a 64-byte header"
+        );
+        assert_eq!(&export[..8], b"CCSDS\0\0\0", "{bin_path}: bad magic");
+        assert_eq!(
+            u32::from_be_bytes(export[8..12].try_into().unwrap()),
+            1,
+            "{bin_path}: bad export version"
+        );
+
+        let mut padded_type = [0u8; 4];
+        let expected_type_bytes = expected_type.as_bytes();
+        padded_type[..expected_type_bytes.len()].copy_from_slice(expected_type_bytes);
+        assert_eq!(
+            &export[12..16],
+            padded_type.as_slice(),
+            "{bin_path}: header SPDU type must match JSON metadata"
+        );
+        assert_eq!(
+            u32::from_be_bytes(export[16..20].try_into().unwrap()) as usize,
+            payload.len(),
+            "{bin_path}: header payload length must match SPDU bytes"
+        );
+        assert_eq!(
+            &export[64..],
+            payload.as_slice(),
+            "{bin_path}: binary payload must match JSON spdu_bytes_hex"
+        );
     }
 }

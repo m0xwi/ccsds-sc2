@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-04-24T12:00:00Z",
+  "spdu_type": "2",
+  "spdu_id": "test_001",
+  "spdu_bytes_hex": "1f0102030405060708090a0b0c0d0e0f",
+  "fields": {
+    "directive_type": 1,
+    "transceiver_clock_hex": "0203040506070809",
+    "send_side_delay_hex": "0a0b0c",
+    "one_way_light_time_hex": "0d0e0f"
+  },
+  "notes": "Variable-length SPDU Type 2 Time Distribution PDU with deterministic byte-pattern fields."
+}
+
