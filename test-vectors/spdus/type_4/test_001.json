@@ -1,9 +1,9 @@
 {
   "version": "1.0",
   "timestamp": "2026-04-24T12:00:00Z",
-  "spdu_type": "1",
+  "spdu_type": "4",
   "spdu_id": "test_001",
-  "spdu_bytes_hex": "02602a",
+  "spdu_bytes_hex": "32402a",
   "fields": {
     "directives": [
       {
@@ -12,6 +12,6 @@
       }
     ]
   },
-  "notes": "Workshop artifact style: Variable-length SPDU Type 1 with a single SET V(R) directive (SEQ_CTRL_FSN=42)."
+  "notes": "Variable-length SPDU Type 4 with a single SET V(R) directive (SEQ_CTRL_FSN=42)."
 }
 
