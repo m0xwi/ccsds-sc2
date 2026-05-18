@@ -299,10 +299,12 @@ impl SPDU {
     pub fn to_bytes(&self) -> Result<Vec<u8>, SpduError> {
         match self {
             SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw)) => {
-                Ok(plcw.to_u16().to_be_bytes().to_vec())
+                let word = plcw.to_u16().map_err(SpduError::Invalid)?;
+                Ok(word.to_be_bytes().to_vec())
             }
             SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw)) => {
-                Ok(plcw.to_u32().to_be_bytes().to_vec())
+                let word = plcw.to_u32().map_err(SpduError::Invalid)?;
+                Ok(word.to_be_bytes().to_vec())
             }
             SPDU::VariableLengthSPDU(vl) => {
                 let (type_id, body): (u8, Vec<u8>) = match vl {
@@ -467,6 +469,52 @@ mod tests {
         assert_eq!(
             pdu, parsed,
             "round-trip: decoded value must match constructed PLCW"
+        );
+    }
+
+    #[test]
+    fn spdu_fixed_f1_rejects_truncated_counter() {
+        let pdu = SPDU::f1(PLCW16Bit {
+            report_value: 1,
+            expedited_frame_counter: 8,
+            reserved_spare: false,
+            pcid: false,
+            retransmit_flag: false,
+        });
+
+        let err = pdu.to_bytes().unwrap_err();
+        assert_eq!(
+            err,
+            SpduError::Invalid("F1 expedited_frame_counter must be 0..7")
+        );
+    }
+
+    #[test]
+    fn spdu_fixed_f2_rejects_truncated_fields() {
+        let bad_counter = SPDU::f2(PLCW32Bit {
+            report_value: 1,
+            expedited_frame_counter: 8,
+            pcid: false,
+            retransmit_flag: false,
+            reserved_spares: 0,
+        });
+        let err = bad_counter.to_bytes().unwrap_err();
+        assert_eq!(
+            err,
+            SpduError::Invalid("F2 expedited_frame_counter must be 0..7")
+        );
+
+        let bad_spares = SPDU::f2(PLCW32Bit {
+            report_value: 1,
+            expedited_frame_counter: 0,
+            pcid: false,
+            retransmit_flag: false,
+            reserved_spares: 0x200,
+        });
+        let err = bad_spares.to_bytes().unwrap_err();
+        assert_eq!(
+            err,
+            SpduError::Invalid("F2 reserved_spares must be 0..=0x1FF (9 bits)")
         );
     }
 
