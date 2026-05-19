@@ -33,6 +33,9 @@ It follows the **"Standardized Test Vector Format"** described in the interopera
   - `type_f1/`
   - `type_f2/`
   - `type_1/`
+  - `type_2/`
+  - `type_4/`
+  - `type_5/`
 
 ## Files
 
