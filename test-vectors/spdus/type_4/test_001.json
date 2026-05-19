@@ -1,17 +1,23 @@
 {
   "version": "1.0",
   "timestamp": "2026-04-24T12:00:00Z",
-  "spdu_type": "1",
+  "spdu_type": "4",
   "spdu_id": "test_001",
-  "spdu_bytes_hex": "02602a",
+  "spdu_bytes_hex": "343243405a",
   "fields": {
     "directives": [
       {
+        "directive": "REPORT_REQUEST",
+        "pcid0_plcw_request": true,
+        "pcid1_plcw_request": false,
+        "time_tag_sample_request": 18,
+        "status_report_request": 3
+      },
+      {
         "directive": "SET_VR",
-        "seq_ctrl_fsn": 42
+        "seq_ctrl_fsn": 90
       }
     ]
   },
-  "notes": "Workshop artifact style: Variable-length SPDU Type 1 with a single SET V(R) directive (SEQ_CTRL_FSN=42)."
+  "notes": "Type 4 First Generation Lunar SPDU with report request and SET V(R) directives."
 }
-
