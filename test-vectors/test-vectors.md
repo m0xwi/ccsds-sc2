@@ -3,7 +3,7 @@
 There are 3 types of test vectors for this implementation. 
 
 ## SPDU test vectors
-The first are the SPDU test vectors containing binary and JSON metadata. There are 10 of these covering all the SPDU types from Type F1/F2, and Type 1/5.
+The first are SPDU test vectors containing binary and JSON metadata for Type F1/F2 and variable-length Types 1, 2, 4, and 5.
 
 ## Frame test vectors
 The second are the frame test vectors containing binary and JSON metadata. There are 5 of these covering the P-frame and U-frames.

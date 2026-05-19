@@ -1,16 +1,37 @@
 {
   "version": "1.0",
   "timestamp": "2026-04-24T12:00:00Z",
-  "spdu_type": "1",
+  "spdu_type": "5",
   "spdu_id": "test_001",
-  "spdu_bytes_hex": "02602a",
+  "spdu_bytes_hex": "4e9192348d160081018202830428e0",
   "fields": {
     "directives": [
       {
-        "directive": "SET_VR",
-        "seq_ctrl_fsn": 42
+        "directive": "PN_RANGING",
+        "mode_type": 2,
+        "ranging_code": 0,
+        "chip_rate_k": 6,
+        "chip_rate_l": 4660,
+        "chip_rate_m": 9029,
+        "ranging_mod_index": 4,
+        "pn_epoch_time_tag": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "status_report_request": 1
+      },
+      {
+        "directive": "REPORT_REQUEST",
+        "pcid0_plcw_request": false,
+        "pcid1_plcw_request": true,
+        "time_tag_sample_request": 7,
+        "status_report_request": 0
       }
     ]
   },
-  "notes": "Workshop artifact style: Variable-length SPDU Type 1 with a single SET V(R) directive (SEQ_CTRL_FSN=42)."
+  "notes": "Type 5 Second Generation Lunar SPDU with PN ranging and report request directives."
 }
