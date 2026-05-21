@@ -2,7 +2,7 @@
 
 use crate::{PLCW16Bit, PLCW32Bit};
 
-use super::shared::{Seq, SeqWidth, add_mod, dist_mod};
+use super::shared::{CopError, Seq, SeqWidth, add_mod, dist_mod};
 
 /// Receiver-side COP-P state: `V(R)`, gap detection, expedited counter, PLCW fields.
 ///
@@ -56,14 +56,20 @@ impl FarmP {
         }
     }
 
-    pub fn plcw_f1(&self, pcid: bool) -> PLCW16Bit {
-        PLCW16Bit {
+    pub fn plcw_f1(&self, pcid: bool) -> Result<PLCW16Bit, CopError> {
+        if self.v_r.0 > u8::MAX as u32 {
+            return Err(CopError::InvalidPlcw(
+                "F1 PLCW report value cannot represent V(R) above 255",
+            ));
+        }
+
+        Ok(PLCW16Bit {
             report_value: self.v_r.as_u8(),
             expedited_frame_counter: self.expedited_frame_counter,
             reserved_spare: false,
             pcid,
             retransmit_flag: self.r_s,
-        }
+        })
     }
 
     pub fn plcw_f2(&self, pcid: bool) -> PLCW32Bit {
@@ -88,7 +94,7 @@ mod tests {
         let rx = farm.on_sequence_frame(Seq(2));
         assert_eq!(rx, FarmRx::DiscardedGap);
         assert!(farm.r_s);
-        let plcw = farm.plcw_f1(false);
+        let plcw = farm.plcw_f1(false).unwrap();
         assert!(plcw.retransmit_flag);
         assert_eq!(plcw.report_value, 0);
     }
@@ -100,5 +106,20 @@ mod tests {
         assert_eq!(rx, FarmRx::Accepted);
         assert_eq!(farm.v_r, Seq(1));
         assert!(!farm.r_s);
+    }
+
+    #[test]
+    fn farm_f1_rejects_report_value_that_would_truncate() {
+        let mut farm = FarmP::new(SeqWidth::Mod65536);
+        farm.on_set_vr(Seq(300));
+
+        let err = farm.plcw_f1(false).unwrap_err();
+        assert_eq!(
+            err,
+            CopError::InvalidPlcw("F1 PLCW report value cannot represent V(R) above 255")
+        );
+
+        let plcw = farm.plcw_f2(false);
+        assert_eq!(plcw.report_value, 300);
     }
 }
