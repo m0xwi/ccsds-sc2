@@ -368,6 +368,7 @@ impl SetControlParameters {
     pub fn to_u16(&self) -> u16 {
         let mut word = (self.time_sample as u16) & 0x003F; // bits 0-5
         word |= ((self.duplex as u16) & 0x07) << 6; // bits 6-8
+        word |= ((self.reserved as u16) & 0x03) << 9; // bits 9-10
         if self.remote_no_more_data {
             word |= 1 << 11; // bit 11
         }
@@ -466,7 +467,8 @@ impl ReportRequest {
     }
 
     pub fn to_u16(&self) -> u16 {
-        let mut word = ((self.status_report_request as u16) & 0x1F) << 3;
+        let mut word = (self.spare as u16) & 0x07;
+        word |= ((self.status_report_request as u16) & 0x1F) << 3;
         word |= ((self.time_tag_request as u16) & 0x07) << 8;
         if self.pcid0_plcw_request {
             word |= 1 << 11; // bit 11
@@ -573,5 +575,20 @@ mod tests {
         let bytes = container.to_bytes().unwrap();
         let parsed = DirectivesOrReportsUHF::from_bytes(&bytes).unwrap();
         assert_eq!(container, parsed);
+    }
+
+    #[test]
+    fn type1_roundtrip_preserves_control_reserved_and_report_spare_bits() {
+        let wire = [0x3f, 0x95, 0x8e, 0xdd];
+        let parsed = DirectivesOrReportsUHF::from_bytes(&wire).unwrap();
+
+        assert_eq!(
+            parsed,
+            DirectivesOrReportsUHF::new(vec![
+                Type1Directive::set_control_parameters(0x15, 0x06, 0x03, true, true),
+                Type1Directive::report_request(0x05, 0x1b, 0x06, true, false),
+            ])
+        );
+        assert_eq!(parsed.to_bytes().unwrap(), wire);
     }
 }
