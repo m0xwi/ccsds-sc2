@@ -1,27 +1,16 @@
-//! **Communications Operations Procedure — Proximity (COP-P)** per **CCSDS 235.1-W-0.4 §6**.
+//! COP-P (Communications Operations Procedure — Proximity) per **CCSDS 235.1-W-0.4 §6**.
 //!
-//! COP-P provides reliable **Sequence Controlled** delivery using sequence numbers and **PLCWs**,
-//! and a separate **Expedited** path. It splits into:
-//!
-//! - **FOP-P** ([`FopP`]) — **Frame Operation Procedure** at the sender (**§6.2**): `V(S)`, transmit
-//!   window, retransmission, PLCW processing.
-//! - **FARM-P** ([`FarmP`]) — **Frame Acceptance and Reporting Mechanism** at the receiver
-//!   (**§6.3**): `V(R)`, gap detection, PLCW report generation.
-//!
-//! # Persistence
-//!
-//! **§4** defines the *persistence activity process* (timers such as waiting period, response,
-//! lifetime). That MAC-layer behavior is not implemented in this module; FOP-P/FARM-P here cover
-//! the sequence-control core of **§6** only.
-//!
-//! # See also
-//!
-//! - [`crate::spdu`] for PLCW **Type F1/F2** encoding carried in P-frames.
+//! - [`seq`] — §6.1 sequence arithmetic (modulo-256 / modulo-65536).
+//! - [`farm`] — §6.3 FARM-P (receiver): events RE0–RE7.
+//! - [`fop`] — §6.2 FOP-P (sender): events SE0–SE8, queues, transmission window.
+//! - [`cop`] — Coordinator wiring FARM-P and FOP-P to [`crate::frame`] and [`crate::spdu`].
 
+mod seq;
 mod farm;
 mod fop;
-mod shared;
+mod cop;
 
+pub use seq::*;
 pub use farm::*;
 pub use fop::*;
-pub use shared::*;
+pub use cop::*;

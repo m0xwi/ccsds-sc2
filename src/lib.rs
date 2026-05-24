@@ -13,7 +13,7 @@
 //!
 //! | CCSDS 235.1 section | This crate |
 //! | --- | --- |
-//! | **§2 Overview** — SPDUs, data services, COP-P | [`spdu`], [`cop_p`] |
+//! | **§2 Overview** — SPDUs, data services, COP-P | [`spdu`] |
 //! | **§3 Supervisory Protocol Data Units** — fixed (F1/F2) and variable-length SPDUs | [`spdu`] |
 //! | **§4 Persistence** — persistent activity timers and notifications | *Not implemented here* (see spec §4.2–4.3) |
 //! | **§5 Data services** — transfer frames and CRC | [`frame`] |
@@ -25,7 +25,7 @@
 //! ## Modules
 //!
 //! - [`spdu`] — Encode/decode **SPDU**s (§3), including Type F1/F2 **PLCWs** and variable types 1–5.
-//! - [`cop_p`] — **COP-P**: [`FopP`] (§6.2) and [`FarmP`] (§6.3).
+//! - [`cop_p`] — COP-P: FARM-P, FOP-P, and [`CopP`] coordinator (§6).
 //! - [`frame`] — **P-frame** / **U-frame** transfer frames with QoS and CRC-16 (§5.4–5.6, 211.0 frames).
 //!
 //! ## Abbreviations (from §1.5)

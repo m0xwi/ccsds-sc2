@@ -1,188 +1,348 @@
-//! FOP-P — **Frame Operation Procedure** (sender side), **§6.2**.
+//! FOP-P (Frame Operation Procedure — Proximity) — sender-side COP.
+//!
+//! Implements **CCSDS 235.1-W-0.4 §6.2** variables, helper procedures (§6.2.3.1), and state-table
+//! events **SE0–SE8** (§6.2.3.3).
 
-use super::shared::{CopError, CopFrame, ExpFrame, Seq, SeqFrame, SeqWidth, add_mod, dist_mod};
+use std::collections::VecDeque;
 
-/// Sender-side COP-P state: sequencing, window, retransmission, PLCW handling.
-///
-/// Implements **§6.2** (including **§6.2.3.3** events SE0–SE4) at the level required for the
-/// reference competition gateways.
+use crate::spdu::{FixedLengthSPDU, PLCW16Bit, PLCW32Bit, SPDU};
+
+use super::seq::{Seq, SeqWidth, diff, greater_than, less_than};
+
+/// FOP-P state (§6.2.3.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FopState {
+    /// S1 — Active.
+    Active,
+    /// S2 — Resync (SET V(R) persistent activity).
+    Resync,
+}
+
+/// A sequence-controlled frame held in the sent queue (§6.2.1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SentFrame {
+    pub seq: Seq,
+    pub payload: Vec<u8>,
+}
+
+/// What SE1 selected for transmission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FopTx {
+    /// Expedited U-frame (§6.2.3.1.6).
+    Expedited { seq: Seq, payload: Vec<u8> },
+    /// New sequence-controlled U-frame (§6.2.3.1.8).
+    SeqNew { seq: Seq, payload: Vec<u8> },
+    /// Retransmitted sequence-controlled U-frame (§6.2.3.1.7).
+    SeqResend { seq: Seq, payload: Vec<u8> },
+}
+
+/// Sender-side COP-P state (FOP-P) per §6.2.2.
 #[derive(Debug, Clone)]
 pub struct FopP {
     width: SeqWidth,
-    transmission_window: u8, // max 127
+    pub state: FopState,
 
-    // Internal variables (6.2.2 + state table usage)
-    pub ve_s: u8,   // modulo-8
-    pub v_s: Seq,   // next new seq number to allocate
-    pub vv_s: Seq,  // retransmission pointer
-    pub n_r: Seq,   // last received report value
-    pub nn_r: Seq,  // next unacknowledged (left edge)
-    pub r_r: bool,  // last retransmit flag from PLCW
-    pub rr_r: bool, // previous retransmit flag from PLCW (for validity checks)
+    pub v_e_s: Seq,
+    pub v_s: Seq,
+    pub v_v_s: Seq,
+    pub n_r: Seq,
+    pub nn_r: Seq,
+    pub r_r: bool,
+    pub rr_r: bool,
+    pub need_plcw: bool,
+    pub need_status_report: bool,
+    pub synch_timer: u32,
+    pub synch_timeout: u32,
+    pub resync: bool,
+    pub transmission_window: u32,
+    pub resync_local: bool,
 
-    sent_queue: Vec<SeqFrame>,
-    expedited_queue: Vec<Vec<u8>>,
-    seq_queue: Vec<Vec<u8>>,
+    exp_queue: VecDeque<Vec<u8>>,
+    seq_queue: VecDeque<Vec<u8>>,
+    sent_queue: VecDeque<SentFrame>,
 }
 
 impl FopP {
-    pub fn new(width: SeqWidth, transmission_window: u8) -> Self {
-        let tw = transmission_window.min(127).max(1);
-        Self {
+    pub fn new(width: SeqWidth) -> Self {
+        let mut fop = Self {
             width,
-            transmission_window: tw,
-            ve_s: 0,
+            state: FopState::Active,
+            v_e_s: Seq(0),
             v_s: Seq(0),
-            vv_s: Seq(0),
+            v_v_s: Seq(0),
             n_r: Seq(0),
             nn_r: Seq(0),
             r_r: false,
             rr_r: false,
-            sent_queue: Vec::new(),
-            expedited_queue: Vec::new(),
-            seq_queue: Vec::new(),
-        }
+            need_plcw: true,
+            need_status_report: true,
+            synch_timer: 0,
+            synch_timeout: 100,
+            resync: false,
+            transmission_window: 127,
+            resync_local: true,
+            exp_queue: VecDeque::new(),
+            seq_queue: VecDeque::new(),
+            sent_queue: VecDeque::new(),
+        };
+        fop.initialize();
+        fop
     }
 
-    pub fn set_transmission_window(&mut self, tw: u8) {
-        self.transmission_window = tw.min(127).max(1);
+    /// **SE0** / Initialize (§6.2.3.1.1).
+    pub fn initialize(&mut self) {
+        self.state = FopState::Active;
+        self.v_e_s = Seq(0);
+        self.v_s = Seq(0);
+        self.v_v_s = Seq(0);
+        self.n_r = Seq(0);
+        self.nn_r = Seq(0);
+        self.r_r = false;
+        self.rr_r = false;
+        self.resync = false;
+        self.need_plcw = true;
+        self.need_status_report = true;
+        self.synch_timer = 0;
+        self.clear_sent_queue();
+        self.clear_seq_queue();
+        self.clear_exp_queue();
     }
 
-    pub fn enqueue_expedited(&mut self, payload: Vec<u8>) {
-        self.expedited_queue.push(payload);
+    pub fn clear_sent_queue(&mut self) {
+        self.sent_queue.clear();
     }
 
-    pub fn enqueue_sequence_controlled(&mut self, payload: Vec<u8>) {
-        self.seq_queue.push(payload);
+    pub fn clear_seq_queue(&mut self) {
+        self.seq_queue.clear();
     }
 
-    /// Window occupancy: number of outstanding unacknowledged seq frames (V(S) - NN(R)).
-    pub fn outstanding(&self) -> u32 {
-        let m = self.width.modulus();
-        dist_mod(self.nn_r.0, self.v_s.0, m)
+    pub fn clear_exp_queue(&mut self) {
+        self.exp_queue.clear();
     }
 
-    pub fn is_window_full(&self) -> bool {
-        self.outstanding() >= (self.transmission_window as u32)
+    pub fn queue_expedited(&mut self, payload: Vec<u8>) {
+        self.exp_queue.push_back(payload);
     }
 
-    /// Spec 6.2.3.3, event SE1: choose the next frame to transmit.
-    pub fn next_frame_to_transmit(&mut self) -> Result<Option<CopFrame>, CopError> {
-        let m = self.width.modulus();
-
-        if let Some(payload) = self.expedited_queue.first().cloned() {
-            self.expedited_queue.remove(0);
-            let out = ExpFrame {
-                ve_s: self.ve_s,
-                payload,
-            };
-            self.ve_s = (self.ve_s + 1) & 0x07;
-            return Ok(Some(CopFrame::Expedited(out)));
-        }
-
-        if self.vv_s.0 != self.v_s.0 {
-            // Continue in-progress retransmission
-            let ns = self.vv_s;
-            if let Some(frame) = self.find_sent_cloned(ns) {
-                self.vv_s = Seq(add_mod(self.vv_s.0, 1, m));
-                return Ok(Some(CopFrame::SequenceControlled(frame)));
-            }
-        }
-
-        if !self.seq_queue.is_empty() && !self.is_window_full() {
-            // Send new sequence-controlled frame
-            let payload = self.seq_queue.remove(0);
-            let ns = self.v_s;
-            self.v_s = Seq(add_mod(self.v_s.0, 1, m));
-            // Keep VV(S) aligned with V(S) unless retransmission is underway.
-            self.vv_s = self.v_s;
-            let frame = SeqFrame { ns, payload };
-            self.sent_queue.push(frame.clone());
-            return Ok(Some(CopFrame::SequenceControlled(frame)));
-        }
-
-        // Initiate progressive retransmission if outstanding unacked exist.
-        if self.nn_r.0 != self.v_s.0 {
-            self.vv_s = self.nn_r;
-            let ns = self.vv_s;
-            if let Some(frame) = self.find_sent_cloned(ns) {
-                self.vv_s = Seq(add_mod(self.vv_s.0, 1, m));
-                return Ok(Some(CopFrame::SequenceControlled(frame)));
-            }
-        }
-
-        Ok(None)
+    pub fn queue_sequence_controlled(&mut self, payload: Vec<u8>) {
+        self.seq_queue.push_back(payload);
     }
 
-    fn find_sent_cloned(&self, ns: Seq) -> Option<SeqFrame> {
-        self.sent_queue.iter().find(|f| f.ns == ns).cloned()
+    pub fn expedited_available(&self) -> bool {
+        !self.exp_queue.is_empty()
     }
 
-    /// Spec 6.2.3.3, event SE2: process a received PLCW (validity + window updates).
-    pub fn on_plcw(&mut self, report_value: Seq, retransmit_flag: bool) -> Result<(), CopError> {
-        let m = self.width.modulus();
-
-        // Validity rules per note 5 in the spec.
-        if dist_mod(self.nn_r.0, report_value.0, m) > dist_mod(self.nn_r.0, self.v_s.0, m) {
-            return Err(CopError::InvalidPlcw("N(R) < NN(R) (too small)"));
-        }
-
-        if dist_mod(self.v_s.0, report_value.0, m) != 0
-            && dist_mod(self.nn_r.0, report_value.0, m) > self.outstanding()
-        {
-            return Err(CopError::InvalidPlcw("N(R) > V(S) (too large)"));
-        }
-
-        if retransmit_flag && report_value.0 == self.v_s.0 {
-            return Err(CopError::InvalidPlcw(
-                "retransmit set but all frames are acknowledged",
-            ));
-        }
-
-        if !retransmit_flag && self.rr_r && report_value.0 == self.nn_r.0 {
-            return Err(CopError::InvalidPlcw(
-                "retransmit cleared but no new frames acknowledged",
-            ));
-        }
-
-        if report_value.0 != self.nn_r.0 {
-            self.remove_acked(report_value);
-            self.nn_r = report_value;
-        }
-
-        // Retransmission pointer update.
-        if retransmit_flag || dist_mod(self.vv_s.0, report_value.0, m) != 0 {
-            let vv_to_nr = dist_mod(self.vv_s.0, report_value.0, m);
-            let vv_to_vs = dist_mod(self.vv_s.0, self.v_s.0, m);
-            if retransmit_flag || vv_to_nr <= vv_to_vs {
-                self.vv_s = report_value;
-            }
-        }
-
-        self.rr_r = self.r_r;
-        self.r_r = retransmit_flag;
-        self.n_r = report_value;
-        Ok(())
+    pub fn sequence_controlled_available(&self) -> bool {
+        !self.seq_queue.is_empty()
     }
 
-    fn remove_acked(&mut self, new_nn_r: Seq) {
-        let m = self.width.modulus();
-        let nn = self.nn_r.0;
-        let target = new_nn_r.0;
+    pub fn unacked_count(&self) -> u32 {
+        diff(self.v_s, self.nn_r, self.width)
+    }
 
-        self.sent_queue.retain(|f| {
-            let dist_to_ns = dist_mod(target, f.ns.0, m);
-            let dist_to_vs = dist_mod(target, self.v_s.0, m);
-            dist_to_ns < dist_to_vs
+    fn window_allows_new_seq(&self) -> bool {
+        self.unacked_count() < self.transmission_window
+    }
+
+    /// **SE1** — Frame sublayer needs a frame to transmit (§6.2.3.3).
+    pub fn select_transmit(&mut self) -> Option<FopTx> {
+        if self.state == FopState::Resync {
+            return None;
+        }
+
+        if self.expedited_available() {
+            return Some(self.send_exp_frame());
+        }
+
+        if less_than(self.v_v_s, self.v_s, self.width) {
+            return Some(self.resend_seq_frame());
+        }
+
+        if self.sequence_controlled_available() && self.window_allows_new_seq() {
+            return Some(self.send_new_seq_frame());
+        }
+
+        if less_than(self.nn_r, self.v_s, self.width) {
+            self.v_v_s = self.nn_r;
+            return Some(self.resend_seq_frame());
+        }
+
+        None
+    }
+
+    fn send_exp_frame(&mut self) -> FopTx {
+        let payload = self.exp_queue.pop_front().unwrap_or_default();
+        let seq = self.v_e_s;
+        self.v_e_s = Seq((self.v_e_s.0 + 1) % self.width.modulus());
+        FopTx::Expedited { seq, payload }
+    }
+
+    fn send_new_seq_frame(&mut self) -> FopTx {
+        let payload = self.seq_queue.pop_front().unwrap_or_default();
+        let seq = self.v_s;
+        self.sent_queue.push_back(SentFrame {
+            seq,
+            payload: payload.clone(),
         });
+        let m = self.width.modulus();
+        self.v_s = Seq((self.v_s.0 + 1) % m);
+        self.v_v_s = Seq((self.v_v_s.0 + 1) % m);
+        FopTx::SeqNew { seq, payload }
+    }
 
-        if self.sent_queue.is_empty() {
-            self.nn_r = Seq(target);
-            self.vv_s = Seq(target);
-            self.n_r = Seq(target);
-        } else if nn != target {
-            // nothing else needed
+    fn resend_seq_frame(&mut self) -> FopTx {
+        let seq = self.v_v_s;
+        let payload = self
+            .sent_queue
+            .iter()
+            .find(|f| f.seq.0 % self.width.modulus() == seq.0 % self.width.modulus())
+            .map(|f| f.payload.clone())
+            .unwrap_or_default();
+        let m = self.width.modulus();
+        self.v_v_s = Seq((self.v_v_s.0 + 1) % m);
+        FopTx::SeqResend { seq, payload }
+    }
+
+    /// Remove acknowledged frames from the sent queue (§6.2.3.1.2).
+    pub fn remove_acknowledged_from_sent_queue(&mut self) {
+        let n = diff(self.n_r, self.nn_r, self.width) as usize;
+        for _ in 0..n {
+            self.sent_queue.pop_front();
         }
+    }
+
+    /// Store this PLCW (§6.2.3.1.5).
+    pub fn store_plcw(&mut self) {
+        self.nn_r = self.n_r;
+        self.rr_r = self.r_r;
+    }
+
+    pub fn clear_synch_timer(&mut self) {
+        self.synch_timer = 0;
+    }
+
+    pub fn start_synch_timer(&mut self) {
+        if self.synch_timer == 0 && self.synch_timeout > 0 {
+            self.synch_timer = self.synch_timeout;
+        }
+    }
+
+    /// Advance the synch timer by one tick; returns true if it expired this tick.
+    pub fn tick_synch_timer(&mut self) -> bool {
+        if self.synch_timer == 0 {
+            return false;
+        }
+        self.synch_timer -= 1;
+        self.synch_timer == 0
+    }
+
+    /// Validate an incoming PLCW (§6.2.3.3 note 5).
+    pub fn is_valid_plcw(&self, n_r: Seq, r_r: bool) -> bool {
+        if less_than(n_r, self.nn_r, self.width) {
+            return false;
+        }
+        if greater_than(n_r, self.v_s, self.width) {
+            return false;
+        }
+        if r_r && n_r.0 % self.width.modulus() == self.v_s.0 % self.width.modulus() {
+            return false;
+        }
+        if !r_r
+            && self.rr_r
+            && n_r.0 % self.width.modulus() == self.nn_r.0 % self.width.modulus()
+        {
+            return false;
+        }
+        true
+    }
+
+    /// Apply report values from a Type F1 PLCW.
+    pub fn apply_plcw_f1(&mut self, plcw: &PLCW16Bit) {
+        self.apply_plcw(Seq(plcw.report_value as u32), plcw.retransmit_flag);
+    }
+
+    /// Apply report values from a Type F2 PLCW.
+    pub fn apply_plcw_f2(&mut self, plcw: &PLCW32Bit) {
+        self.apply_plcw(Seq(plcw.report_value as u32), plcw.retransmit_flag);
+    }
+
+    fn apply_plcw(&mut self, n_r: Seq, r_r: bool) {
+        self.n_r = n_r;
+        self.r_r = r_r;
+    }
+
+    /// **SE2** — Valid PLCW received (§6.2.3.3).
+    pub fn on_valid_plcw(&mut self) {
+        let m = self.width.modulus();
+        let resync_complete =
+            !self.r_r && self.n_r.0 % m == self.nn_r.0 % m;
+
+        if greater_than(self.n_r, self.nn_r, self.width) {
+            self.remove_acknowledged_from_sent_queue();
+        }
+        if self.r_r || greater_than(self.n_r, self.v_v_s, self.width) {
+            self.v_v_s = self.n_r;
+        }
+        self.store_plcw();
+        self.clear_synch_timer();
+        self.need_plcw = false;
+
+        if resync_complete {
+            self.resync = false;
+            self.state = FopState::Active;
+        }
+    }
+
+    /// **SE3** — Invalid PLCW received (§6.2.3.3).
+    pub fn on_invalid_plcw(&mut self) {
+        self.start_synch_timer();
+        self.v_v_s = self.nn_r;
+    }
+
+    /// **SE4** — Synch-timer expired (§6.2.3.3).
+    pub fn on_synch_timeout(&mut self) {
+        if self.resync_local {
+            self.rr_r = false;
+            self.resync = true;
+            self.state = FopState::Resync;
+        }
+    }
+
+    /// **SE7** — Reset request (§6.2.3.3).
+    pub fn on_reset(&mut self) {
+        self.initialize();
+    }
+
+    /// Process PLCW bytes from a received P-frame.
+    pub fn on_plcw_bytes(&mut self, bytes: &[u8]) {
+        match SPDU::from_bytes(bytes) {
+            Ok(SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(p))) => {
+                self.apply_plcw_f1(&p);
+                if self.is_valid_plcw(self.n_r, self.r_r) {
+                    self.on_valid_plcw();
+                } else {
+                    self.on_invalid_plcw();
+                }
+            }
+            Ok(SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(p))) => {
+                self.apply_plcw_f2(&p);
+                if self.is_valid_plcw(self.n_r, self.r_r) {
+                    self.on_valid_plcw();
+                } else {
+                    self.on_invalid_plcw();
+                }
+            }
+            _ => self.on_invalid_plcw(),
+        }
+    }
+
+    /// Build SET V(R) directive body bytes for resync (§6.2.3.2): SEQ_CTRL_FSN = NN(R).
+    pub fn set_vr_directive_fsn(&self) -> u8 {
+        self.nn_r.as_u8()
+    }
+
+    pub fn plcw_sent(&mut self) {
+        self.need_plcw = false;
     }
 }
 
@@ -191,54 +351,78 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fop_window_blocks_new_frames() {
-        let mut fop = FopP::new(SeqWidth::Mod256, 2);
-        fop.enqueue_sequence_controlled(vec![1]);
-        fop.enqueue_sequence_controlled(vec![2]);
-        fop.enqueue_sequence_controlled(vec![3]);
-
-        let _ = fop.next_frame_to_transmit().unwrap(); // ns=0
-        let _ = fop.next_frame_to_transmit().unwrap(); // ns=1
-        assert!(fop.is_window_full());
-        let next = fop.next_frame_to_transmit().unwrap();
-        assert!(matches!(next, Some(CopFrame::SequenceControlled(_))));
+    fn se0_initialize() {
+        let fop = FopP::new(SeqWidth::Mod256);
+        assert_eq!(fop.state, FopState::Active);
+        assert_eq!(fop.v_s, Seq(0));
+        assert!(fop.need_plcw);
     }
 
     #[test]
-    fn fop_ack_slides_window_and_allows_new() {
-        let mut fop = FopP::new(SeqWidth::Mod256, 2);
-        fop.enqueue_sequence_controlled(vec![1]);
-        fop.enqueue_sequence_controlled(vec![2]);
-        fop.enqueue_sequence_controlled(vec![3]);
+    fn se1_send_new_seq_respects_window() {
+        let mut fop = FopP::new(SeqWidth::Mod256);
+        fop.transmission_window = 2;
+        fop.queue_sequence_controlled(vec![1]);
+        fop.queue_sequence_controlled(vec![2]);
+        fop.queue_sequence_controlled(vec![3]);
 
-        let _ = fop.next_frame_to_transmit().unwrap(); // ns=0
-        let _ = fop.next_frame_to_transmit().unwrap(); // ns=1
-        assert!(fop.is_window_full());
-
-        fop.on_plcw(Seq(1), false).unwrap(); // ack ns=0
-        assert!(!fop.is_window_full());
-
-        let next = fop.next_frame_to_transmit().unwrap();
-        match next {
-            Some(CopFrame::SequenceControlled(f)) => assert_eq!(f.ns, Seq(2)),
-            _ => panic!("expected new seq frame"),
-        }
+        assert!(matches!(fop.select_transmit(), Some(FopTx::SeqNew { .. })));
+        assert!(matches!(fop.select_transmit(), Some(FopTx::SeqNew { .. })));
+        assert!(fop.select_transmit().is_none());
+        assert_eq!(fop.unacked_count(), 2);
     }
 
     #[test]
-    fn fop_retransmit_flag_moves_vv_s() {
-        let mut fop = FopP::new(SeqWidth::Mod256, 4);
-        fop.enqueue_sequence_controlled(vec![1]);
-        fop.enqueue_sequence_controlled(vec![2]);
-        let _ = fop.next_frame_to_transmit().unwrap(); // ns=0
-        let _ = fop.next_frame_to_transmit().unwrap(); // ns=1
+    fn se2_valid_plcw_removes_acked_frames() {
+        let mut fop = FopP::new(SeqWidth::Mod256);
+        fop.queue_sequence_controlled(vec![10]);
+        let _ = fop.select_transmit();
+        fop.queue_sequence_controlled(vec![11]);
+        let _ = fop.select_transmit();
+        assert_eq!(fop.sent_queue.len(), 2);
 
-        fop.on_plcw(Seq(0), true).unwrap();
-        assert_eq!(fop.vv_s, Seq(0));
-        let next = fop.next_frame_to_transmit().unwrap();
-        match next {
-            Some(CopFrame::SequenceControlled(f)) => assert_eq!(f.ns, Seq(0)),
-            _ => panic!("expected retransmit"),
-        }
+        fop.n_r = Seq(1);
+        fop.r_r = false;
+        assert!(fop.is_valid_plcw(fop.n_r, fop.r_r));
+        fop.on_valid_plcw();
+        assert_eq!(fop.sent_queue.len(), 1);
+    }
+
+    #[test]
+    fn se2_retransmit_flag_sets_vv_s() {
+        let mut fop = FopP::new(SeqWidth::Mod256);
+        fop.queue_sequence_controlled(vec![1]);
+        let _ = fop.select_transmit();
+        fop.nn_r = Seq(0);
+        fop.n_r = Seq(0);
+        fop.r_r = true;
+        fop.on_valid_plcw();
+        assert_eq!(fop.v_v_s, Seq(0));
+    }
+
+    #[test]
+    fn se3_invalid_plcw_starts_synch() {
+        let mut fop = FopP::new(SeqWidth::Mod256);
+        fop.v_s = Seq(5);
+        fop.nn_r = Seq(0);
+        fop.n_r = Seq(10);
+        fop.on_invalid_plcw();
+        assert!(fop.synch_timer > 0);
+        assert_eq!(fop.v_v_s, Seq(0));
+    }
+
+    #[test]
+    fn progressive_retransmit_when_nn_r_behind() {
+        let mut fop = FopP::new(SeqWidth::Mod256);
+        fop.queue_sequence_controlled(vec![1]);
+        let _ = fop.select_transmit();
+        fop.queue_sequence_controlled(vec![2]);
+        let _ = fop.select_transmit();
+        fop.nn_r = Seq(0);
+        fop.n_r = Seq(0);
+        fop.r_r = false;
+        fop.on_valid_plcw();
+        let tx = fop.select_transmit();
+        assert!(matches!(tx, Some(FopTx::SeqResend { .. })));
     }
 }
