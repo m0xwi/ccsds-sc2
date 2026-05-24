@@ -2,7 +2,7 @@
   "version": "1.0",
   "timestamp": "2026-04-24T12:00:00Z",
   "spdu_type": "5",
-  "spdu_id": "test_001",
+  "spdu_id": "test_002",
   "spdu_bytes_hex": "02602a",
   "fields": {
     "directives": [
