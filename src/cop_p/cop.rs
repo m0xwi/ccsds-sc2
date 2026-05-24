@@ -2,9 +2,7 @@
 //!
 //! This is the **Gateway 2** integration point described in the competition deliverables.
 
-use crate::frame::{
-    Frame, FrameKind, Qos, Version3Frame, Version4Frame,
-};
+use crate::frame::{Frame, FrameKind, Qos, Version3Frame};
 use crate::spdu::{DirectivesOrReportsUHF, SPDU, Type1Directive};
 
 use super::farm::{FarmP, FarmRx};
@@ -188,6 +186,7 @@ impl CopP {
 mod tests {
     use super::*;
     use crate::frame::FrameKind;
+    use super::super::seq::Seq;
 
     fn drain_tx(cop: &mut CopP) -> Vec<CopTx> {
         let mut out = Vec::new();

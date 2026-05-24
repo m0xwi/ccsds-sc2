@@ -3,8 +3,7 @@
 //! Implements state variables from **CCSDS 235.1-W-0.4 §6.3.2** and events **RE0–RE7** from §6.3.1.
 
 use crate::spdu::{
-    DirectivesOrReportsUHF, FixedLengthSPDU, PLCW16Bit, PLCW32Bit, SPDU, Type1Directive,
-    VariableLengthSPDU,
+    FixedLengthSPDU, PLCW16Bit, PLCW32Bit, SPDU, Type1Directive, VariableLengthSPDU,
 };
 use crate::frame::{Frame, FrameKind, Qos};
 
