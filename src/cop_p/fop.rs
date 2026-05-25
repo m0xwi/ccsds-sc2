@@ -155,9 +155,6 @@ impl FopP {
         }
 
         if less_than(self.v_v_s, self.v_s, self.width) {
-            if less_than(self.nn_r, self.v_v_s, self.width) {
-                self.v_v_s = self.nn_r;
-            }
             return Some(self.resend_seq_frame());
         }
 
@@ -275,11 +272,17 @@ impl FopP {
     pub fn on_valid_plcw(&mut self) {
         let m = self.width.modulus();
         let resync_complete = !self.r_r && self.n_r.0 % m == self.nn_r.0 % m;
+        let ack_advanced = greater_than(self.n_r, self.nn_r, self.width);
 
-        if greater_than(self.n_r, self.nn_r, self.width) {
+        if ack_advanced {
             self.remove_acknowledged_from_sent_queue();
         }
-        if self.r_r || greater_than(self.n_r, self.v_v_s, self.width) {
+        if self.r_r
+            || greater_than(self.n_r, self.v_v_s, self.width)
+            || (ack_advanced
+                && less_than(self.v_v_s, self.v_s, self.width)
+                && less_than(self.n_r, self.v_v_s, self.width))
+        {
             self.v_v_s = self.n_r;
         }
         self.store_plcw();
