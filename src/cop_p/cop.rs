@@ -121,7 +121,7 @@ impl CopP {
 
     fn build_uframe(&self, tx: &FopTx) -> Frame {
         let (qos, seq) = match tx {
-            FopTx::Expedited { seq, .. } => (Qos::Expedited, None),
+            FopTx::Expedited { .. } => (Qos::Expedited, None),
             FopTx::SeqNew { seq, .. } | FopTx::SeqResend { seq, .. } => {
                 (Qos::SequenceControlled, Some(seq.as_u16()))
             }
