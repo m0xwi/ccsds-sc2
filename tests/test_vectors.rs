@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ccsds_sc2::{
-    DirectivesOrReportsUHF, PLCW16Bit, PLCW32Bit, SPDU, Type1Directive, bytes_to_hex, hex_to_bytes,
+    DirectivesOrReportsUHF, FixedLengthSPDU, PLCW16Bit, PLCW32Bit, SPDU, SecondGenLunar,
+    Type1Directive, Type5Directive, Type5SetVR, VariableLengthSPDU, bytes_to_hex, hex_to_bytes,
 };
 use serde::Deserialize;
 
@@ -131,8 +132,52 @@ fn vector_to_spdu(v: &SpduVector, source: &Path) -> Option<SPDU> {
                 Type1Directive::set_vr(fsn as u8),
             )))
         }
+        "5" => {
+            let f = &v.fields;
+            let directives = f
+                .get("directives")
+                .and_then(|x| x.as_array())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "vector `{}` missing/invalid `fields.directives` array",
+                        source.display()
+                    )
+                });
+
+            if directives.len() != 1 {
+                return None;
+            }
+            let d0 = &directives[0];
+            let name = d0.get("directive").and_then(|x| x.as_str()).unwrap_or("");
+            if name != "SET_VR" {
+                return None;
+            }
+            let fsn = d0.get("seq_ctrl_fsn").and_then(|x| x.as_u64()).unwrap_or(0);
+            Some(SPDU::type5(SecondGenLunar {
+                directives: vec![Type5Directive::SetVR(Type5SetVR {
+                    seq_ctrl_fsn: fsn as u8,
+                })],
+            }))
+        }
         _ => None,
     }
+}
+
+fn assert_spdu_type_matches(label: &str, decoded: &SPDU, expected: &str) {
+    let matches_type = match (expected, decoded) {
+        ("F1", SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(_))) => true,
+        ("F2", SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(_))) => true,
+        ("1", SPDU::VariableLengthSPDU(VariableLengthSPDU::Type1(_))) => true,
+        ("2", SPDU::VariableLengthSPDU(VariableLengthSPDU::Type2(_))) => true,
+        ("3", SPDU::VariableLengthSPDU(VariableLengthSPDU::Type3(_))) => true,
+        ("4", SPDU::VariableLengthSPDU(VariableLengthSPDU::Type4(_))) => true,
+        ("5", SPDU::VariableLengthSPDU(VariableLengthSPDU::Type5(_))) => true,
+        _ => false,
+    };
+    assert!(
+        matches_type,
+        "{label}: decoded SPDU type does not match vector spdu_type `{expected}`"
+    );
 }
 
 #[test]
@@ -151,10 +196,14 @@ fn json_test_vectors_roundtrip_and_match_wire_bytes() {
 
         // Always enforce: bytes decode and re-encode is stable for the expected wire bytes.
         let expected_bytes = hex_to_bytes(&v.spdu_bytes_hex).unwrap_or_else(|e| {
-            panic!("{label}: invalid `spdu_bytes_hex` `{}`: {e}", v.spdu_bytes_hex)
+            panic!(
+                "{label}: invalid `spdu_bytes_hex` `{}`: {e}",
+                v.spdu_bytes_hex
+            )
         });
         let decoded = SPDU::from_bytes(&expected_bytes)
             .unwrap_or_else(|e| panic!("{label}: SPDU::from_bytes failed: {e}"));
+        assert_spdu_type_matches(&label, &decoded, &v.spdu_type);
         let reencoded = decoded
             .to_bytes()
             .unwrap_or_else(|e| panic!("{label}: SPDU::to_bytes failed after decode: {e}"));
@@ -184,4 +233,3 @@ fn json_test_vectors_roundtrip_and_match_wire_bytes() {
         }
     }
 }
-
