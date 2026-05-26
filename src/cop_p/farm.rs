@@ -142,7 +142,7 @@ impl FarmP {
         seq: Option<u16>,
         payload: &[u8],
     ) -> FarmFrameResult {
-        let n_s = seq.map(|s| Seq((s & 0xFF) as u32));
+        let n_s = seq.map(|s| Seq((s as u32) % self.width.modulus()));
 
         match kind {
             FrameKind::PFrame => self.on_pframe_payload(payload),

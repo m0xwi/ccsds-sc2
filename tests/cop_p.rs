@@ -71,3 +71,23 @@ fn expedited_bypasses_sequence_window() {
     let tx = fop_side.fop.select_transmit();
     assert!(matches!(tx, Some(FopTx::Expedited { .. })));
 }
+
+#[test]
+fn mod65536_receive_uses_full_sequence_number() {
+    let mut node = CopP::new(SeqWidth::Mod65536);
+    node.farm.v_r.0 = 300;
+
+    let frame = Frame::V3(Version3Frame {
+        kind: FrameKind::UFrame,
+        qos: Qos::SequenceControlled,
+        scid: 0,
+        vcid: 0,
+        seq: Some(300),
+        payload: vec![7, 8, 9],
+    });
+
+    let rx = node.receive(&frame);
+    assert_eq!(rx.farm, FarmRx::Accepted);
+    assert_eq!(rx.delivered_payload, Some(vec![7, 8, 9]));
+    assert_eq!(node.farm.v_r.0, 301);
+}
