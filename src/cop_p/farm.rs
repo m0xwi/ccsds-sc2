@@ -2,10 +2,10 @@
 //!
 //! Implements state variables from **CCSDS 235.1-W-0.4 §6.3.2** and events **RE0–RE7** from §6.3.1.
 
+use crate::frame::{Frame, FrameKind, Qos};
 use crate::spdu::{
     FixedLengthSPDU, PLCW16Bit, PLCW32Bit, SPDU, Type1Directive, VariableLengthSPDU,
 };
-use crate::frame::{Frame, FrameKind, Qos};
 
 use super::seq::{Seq, SeqWidth, add_mod, greater_than, less_than};
 
@@ -142,7 +142,7 @@ impl FarmP {
         seq: Option<u16>,
         payload: &[u8],
     ) -> FarmFrameResult {
-        let n_s = seq.map(|s| Seq((s & 0xFF) as u32));
+        let n_s = seq.map(|s| self.seq_from_frame(s));
 
         match kind {
             FrameKind::PFrame => self.on_pframe_payload(payload),
@@ -167,6 +167,13 @@ impl FarmP {
                     }
                 }
             },
+        }
+    }
+
+    fn seq_from_frame(&self, seq: u16) -> Seq {
+        match self.width {
+            SeqWidth::Mod256 => Seq((seq & 0xFF) as u32),
+            SeqWidth::Mod65536 => Seq(seq as u32),
         }
     }
 
@@ -233,7 +240,7 @@ pub struct FarmFrameResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{Version3Frame, Frame};
+    use crate::frame::{Frame, Version3Frame};
 
     #[test]
     fn re0_initializes_need_flags() {

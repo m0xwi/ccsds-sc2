@@ -6,7 +6,7 @@ use crate::frame::{Frame, FrameKind, Qos, Version3Frame};
 use crate::spdu::{DirectivesOrReportsUHF, SPDU, Type1Directive};
 
 use super::farm::{FarmP, FarmRx};
-use super::fop::{FopP, FopTx};
+use super::fop::{FopP, FopState, FopTx};
 use super::seq::SeqWidth;
 
 /// Combined COP-P endpoint (one node).
@@ -62,13 +62,9 @@ impl CopP {
 
     /// Receive path: validated frame → FARM-P / FOP-P.
     pub fn receive(&mut self, frame: &Frame) -> CopRx {
-        if let Frame::V3(f) = frame {
-            if f.kind == FrameKind::PFrame {
-                self.fop.on_plcw_bytes(&f.payload);
-            }
-        } else if let Frame::V4(f) = frame {
-            if f.kind == FrameKind::PFrame {
-                self.fop.on_plcw_bytes(&f.payload);
+        if let Some(payload) = pframe_payload(frame) {
+            if FarmP::parse_plcw_spdu(payload).is_ok() {
+                self.fop.on_plcw_bytes(payload);
             }
         }
 
@@ -81,6 +77,12 @@ impl CopP {
 
     /// Transmit path: select PLCW or data frame (§5.5.3 / §6).
     pub fn select_transmit(&mut self) -> Option<CopTx> {
+        if self.fop.state == FopState::Resync && self.fop.need_plcw {
+            let spdu = self.build_set_vr_spdu();
+            self.fop.plcw_sent();
+            return Some(CopTx::Plcw(spdu));
+        }
+
         if self.farm.need_plcw {
             let spdu = if self.use_f2_plcw {
                 SPDU::f2(self.farm.plcw_f2(self.pcid))
@@ -182,11 +184,19 @@ impl CopP {
     }
 }
 
+fn pframe_payload(frame: &Frame) -> Option<&[u8]> {
+    match frame {
+        Frame::V3(f) if f.kind == FrameKind::PFrame => Some(&f.payload),
+        Frame::V4(f) if f.kind == FrameKind::PFrame => Some(&f.payload),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::super::seq::Seq;
     use super::*;
     use crate::frame::FrameKind;
-    use super::super::seq::Seq;
 
     fn drain_tx(cop: &mut CopP) -> Vec<CopTx> {
         let mut out = Vec::new();

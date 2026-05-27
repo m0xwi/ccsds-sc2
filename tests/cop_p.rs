@@ -1,7 +1,7 @@
 //! Integration tests for the COP-P layer (Gateway 2).
 
 use ccsds_sc2::{
-    CopP, CopTx, FarmRx, FopTx, Frame, FrameKind, Qos, SeqWidth, Version3Frame,
+    CopP, CopTx, FarmRx, FopState, FopTx, Frame, FrameKind, Qos, Seq, SeqWidth, Version3Frame,
 };
 
 #[test]
@@ -61,6 +61,57 @@ fn set_vr_resynchronizes_receiver() {
     node.apply_peer_set_vr(100);
     assert_eq!(node.farm.v_r.0, 100);
     assert!(!node.farm.r_s);
+}
+
+#[test]
+fn local_resync_sends_set_vr_and_completes_after_peer_plcw() {
+    let mut sender = CopP::new(SeqWidth::Mod256);
+    let mut receiver = CopP::new(SeqWidth::Mod256);
+    sender.fop.nn_r = Seq(7);
+    sender.fop.v_s = Seq(7);
+    sender.fop.v_v_s = Seq(7);
+
+    sender.start_resync();
+    let set_vr_spdu = match sender.select_transmit() {
+        Some(CopTx::Plcw(spdu)) => spdu,
+        other => panic!("expected SET V(R) P-frame, got {other:?}"),
+    };
+
+    let set_vr_frame = CopP::build_pframe(&set_vr_spdu).unwrap();
+    let rx = receiver.receive(&set_vr_frame);
+    assert_eq!(rx.farm, FarmRx::Accepted);
+    assert_eq!(receiver.farm.v_r, Seq(7));
+    assert_eq!(receiver.fop.synch_timer, 0);
+
+    let ack_spdu = match receiver.select_transmit() {
+        Some(CopTx::Plcw(spdu)) => spdu,
+        other => panic!("expected peer PLCW after SET V(R), got {other:?}"),
+    };
+    let ack_frame = CopP::build_pframe(&ack_spdu).unwrap();
+    sender.receive(&ack_frame);
+
+    assert_eq!(sender.fop.state, FopState::Active);
+    assert!(!sender.fop.resync);
+}
+
+#[test]
+fn mod65536_receive_uses_full_sequence_number() {
+    let mut receiver = CopP::new(SeqWidth::Mod65536).with_f2_plcw(true);
+    receiver.farm.v_r = Seq(300);
+    let frame = Frame::V3(Version3Frame {
+        kind: FrameKind::UFrame,
+        qos: Qos::SequenceControlled,
+        scid: 0,
+        vcid: 0,
+        seq: Some(300),
+        payload: vec![0xAA],
+    });
+
+    let rx = receiver.receive(&frame);
+
+    assert_eq!(rx.farm, FarmRx::Accepted);
+    assert_eq!(rx.delivered_payload, Some(vec![0xAA]));
+    assert_eq!(receiver.farm.v_r, Seq(301));
 }
 
 #[test]
