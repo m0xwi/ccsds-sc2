@@ -2,7 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use ccsds_sc2::{
-    DirectivesOrReportsUHF, PLCW16Bit, PLCW32Bit, SPDU, Type1Directive, bytes_to_hex, hex_to_bytes,
+    DirectivesOrReportsUHF, FixedLengthSPDU, PLCW16Bit, PLCW32Bit, SPDU, SecondGenLunar,
+    Type1Directive, Type5Directive, Type5SetVR, VariableLengthSPDU, bytes_to_hex, hex_to_bytes,
 };
 use serde::Deserialize;
 
@@ -80,6 +81,75 @@ fn assert_hex_bytes_equal(label: &str, actual: &[u8], expected_hex: &str) {
     }
 }
 
+fn decoded_spdu_type(spdu: &SPDU) -> String {
+    match spdu {
+        SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(_)) => "F1".to_string(),
+        SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(_)) => "F2".to_string(),
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Type1(_)) => "1".to_string(),
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Type2(_)) => "2".to_string(),
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Type3(_)) => "3".to_string(),
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Type4(_)) => "4".to_string(),
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Type5(_)) => "5".to_string(),
+        SPDU::VariableLengthSPDU(VariableLengthSPDU::Reserved(type_id, _)) => type_id.to_string(),
+    }
+}
+
+fn assert_binary_export_matches_json(
+    json_path: &Path,
+    label: &str,
+    v: &SpduVector,
+    expected_bytes: &[u8],
+) {
+    let bin_path = json_path.with_extension("bin");
+    if !bin_path.exists() {
+        return;
+    }
+
+    let data = fs::read(&bin_path)
+        .unwrap_or_else(|e| panic!("{label}: failed to read `{}`: {e}", bin_path.display()));
+    assert!(
+        data.len() >= 64,
+        "{label}: binary export `{}` is shorter than its 64-byte header",
+        bin_path.display()
+    );
+    assert_eq!(
+        &data[..8],
+        b"CCSDS\0\0\0",
+        "{label}: binary export magic mismatch"
+    );
+
+    let header_type = String::from_utf8(
+        data[12..16]
+            .iter()
+            .copied()
+            .take_while(|b| *b != 0)
+            .collect(),
+    )
+    .unwrap_or_else(|e| panic!("{label}: invalid binary export SPDU type: {e}"));
+    assert_eq!(
+        header_type.as_str(),
+        v.spdu_type.as_str(),
+        "{label}: binary export SPDU type must match JSON metadata"
+    );
+
+    let header_len = u32::from_be_bytes(data[16..20].try_into().unwrap()) as usize;
+    assert_eq!(
+        header_len,
+        expected_bytes.len(),
+        "{label}: binary export SPDU length must match JSON wire bytes"
+    );
+    assert_eq!(
+        data.len(),
+        64 + header_len,
+        "{label}: binary export length must match header"
+    );
+    assert_eq!(
+        &data[64..],
+        expected_bytes,
+        "{label}: binary export payload must match JSON wire bytes"
+    );
+}
+
 // Construct a typed SPDU value from the vector's fields section.
 // If the vector is not a valid SPDU, return None.
 
@@ -131,6 +201,34 @@ fn vector_to_spdu(v: &SpduVector, source: &Path) -> Option<SPDU> {
                 Type1Directive::set_vr(fsn as u8),
             )))
         }
+        "5" => {
+            let f = &v.fields;
+            let directives = f
+                .get("directives")
+                .and_then(|x| x.as_array())
+                .unwrap_or_else(|| {
+                    panic!(
+                        "vector `{}` missing/invalid `fields.directives` array",
+                        source.display()
+                    )
+                });
+
+            // Keep this strict: current vectors are single-directive SET_VR.
+            if directives.len() != 1 {
+                return None;
+            }
+            let d0 = &directives[0];
+            let name = d0.get("directive").and_then(|x| x.as_str()).unwrap_or("");
+            if name != "SET_VR" {
+                return None;
+            }
+            let fsn = d0.get("seq_ctrl_fsn").and_then(|x| x.as_u64()).unwrap_or(0);
+            Some(SPDU::type5(SecondGenLunar {
+                directives: vec![Type5Directive::SetVR(Type5SetVR {
+                    seq_ctrl_fsn: fsn as u8,
+                })],
+            }))
+        }
         _ => None,
     }
 }
@@ -151,10 +249,20 @@ fn json_test_vectors_roundtrip_and_match_wire_bytes() {
 
         // Always enforce: bytes decode and re-encode is stable for the expected wire bytes.
         let expected_bytes = hex_to_bytes(&v.spdu_bytes_hex).unwrap_or_else(|e| {
-            panic!("{label}: invalid `spdu_bytes_hex` `{}`: {e}", v.spdu_bytes_hex)
+            panic!(
+                "{label}: invalid `spdu_bytes_hex` `{}`: {e}",
+                v.spdu_bytes_hex
+            )
         });
         let decoded = SPDU::from_bytes(&expected_bytes)
             .unwrap_or_else(|e| panic!("{label}: SPDU::from_bytes failed: {e}"));
+        let decoded_type = decoded_spdu_type(&decoded);
+        assert_eq!(
+            decoded_type.as_str(),
+            v.spdu_type.as_str(),
+            "{label}: decoded SPDU type must match vector metadata"
+        );
+        assert_binary_export_matches_json(&path, &label, &v, &expected_bytes);
         let reencoded = decoded
             .to_bytes()
             .unwrap_or_else(|e| panic!("{label}: SPDU::to_bytes failed after decode: {e}"));
@@ -184,4 +292,3 @@ fn json_test_vectors_roundtrip_and_match_wire_bytes() {
         }
     }
 }
-
