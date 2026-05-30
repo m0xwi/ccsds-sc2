@@ -71,6 +71,8 @@ fn local_resync_sends_set_vr_until_plcw_confirms() {
     sender.farm.plcw_sent();
     receiver.farm.plcw_sent();
     sender.fop.nn_r = Seq(42);
+    sender.fop.v_s = Seq(42);
+    sender.fop.v_v_s = Seq(42);
     sender.start_resync();
 
     let set_vr = match sender.select_transmit() {
