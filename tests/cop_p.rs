@@ -1,7 +1,7 @@
 //! Integration tests for the COP-P layer (Gateway 2).
 
 use ccsds_sc2::{
-    CopP, CopTx, FarmRx, FopTx, Frame, FrameKind, Qos, SeqWidth, Version3Frame,
+    CopP, CopTx, FarmRx, FopState, FopTx, Frame, FrameKind, Qos, Seq, SeqWidth, Version3Frame,
 };
 
 #[test]
@@ -61,6 +61,37 @@ fn set_vr_resynchronizes_receiver() {
     node.apply_peer_set_vr(100);
     assert_eq!(node.farm.v_r.0, 100);
     assert!(!node.farm.r_s);
+}
+
+#[test]
+fn local_resync_sends_set_vr_until_plcw_confirms() {
+    let mut sender = CopP::new(SeqWidth::Mod256);
+    let mut receiver = CopP::new(SeqWidth::Mod256);
+
+    sender.farm.plcw_sent();
+    receiver.farm.plcw_sent();
+    sender.fop.nn_r = Seq(42);
+    sender.start_resync();
+
+    let set_vr = match sender.select_transmit() {
+        Some(CopTx::Plcw(spdu)) => spdu,
+        other => panic!("expected SET V(R) P-frame, got {other:?}"),
+    };
+    assert_eq!(set_vr.to_bytes().unwrap(), vec![0x02, 0x60, 42]);
+
+    let set_vr_frame = CopP::build_pframe(&set_vr).unwrap();
+    receiver.receive(&set_vr_frame);
+    assert_eq!(receiver.farm.v_r.0, 42);
+    assert_eq!(receiver.fop.synch_timer, 0);
+
+    let ack = match receiver.select_transmit() {
+        Some(CopTx::Plcw(spdu)) => CopP::build_pframe(&spdu).unwrap(),
+        other => panic!("expected PLCW confirmation, got {other:?}"),
+    };
+    sender.receive(&ack);
+
+    assert_eq!(sender.fop.state, FopState::Active);
+    assert!(!sender.fop.resync);
 }
 
 #[test]

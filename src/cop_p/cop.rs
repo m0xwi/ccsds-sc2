@@ -3,7 +3,7 @@
 //! This is the **Gateway 2** integration point described in the competition deliverables.
 
 use crate::frame::{Frame, FrameKind, Qos, Version3Frame};
-use crate::spdu::{DirectivesOrReportsUHF, SPDU, Type1Directive};
+use crate::spdu::{DirectivesOrReportsUHF, FixedLengthSPDU, SPDU, Type1Directive};
 
 use super::farm::{FarmP, FarmRx};
 use super::fop::{FopP, FopTx};
@@ -29,7 +29,7 @@ pub struct CopRx {
 /// What the MAC / frame sublayer should transmit next (Table 5-13 subset).
 #[derive(Debug, Clone, PartialEq)]
 pub enum CopTx {
-    /// P-frame carrying Type F1 or F2 PLCW from FARM-P.
+    /// P-frame carrying an SPDU, such as a Type F1/F2 PLCW or Type 1 directive.
     Plcw(SPDU),
     /// U-frame from FOP-P.
     Data(Frame),
@@ -64,11 +64,11 @@ impl CopP {
     pub fn receive(&mut self, frame: &Frame) -> CopRx {
         if let Frame::V3(f) = frame {
             if f.kind == FrameKind::PFrame {
-                self.fop.on_plcw_bytes(&f.payload);
+                self.receive_pframe_for_fop(&f.payload);
             }
         } else if let Frame::V4(f) = frame {
             if f.kind == FrameKind::PFrame {
-                self.fop.on_plcw_bytes(&f.payload);
+                self.receive_pframe_for_fop(&f.payload);
             }
         }
 
@@ -91,6 +91,10 @@ impl CopP {
             return Some(CopTx::Plcw(spdu));
         }
 
+        if self.fop.state == super::fop::FopState::Resync {
+            return Some(CopTx::Plcw(self.build_set_vr_spdu()));
+        }
+
         if self.fop.need_plcw {
             let spdu = if self.use_f2_plcw {
                 SPDU::f2(self.farm.plcw_f2(self.pcid))
@@ -104,6 +108,16 @@ impl CopP {
         let tx = self.fop.select_transmit()?;
         let frame = self.build_uframe(&tx);
         Some(CopTx::Data(frame))
+    }
+
+    fn receive_pframe_for_fop(&mut self, payload: &[u8]) {
+        match SPDU::from_bytes(payload) {
+            Ok(SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(_) | FixedLengthSPDU::F2(_))) => {
+                self.fop.on_plcw_bytes(payload)
+            }
+            Ok(_) => {}
+            Err(_) => self.fop.on_invalid_plcw(),
+        }
     }
 
     fn build_uframe(&self, tx: &FopTx) -> Frame {
@@ -184,9 +198,9 @@ impl CopP {
 
 #[cfg(test)]
 mod tests {
+    use super::super::seq::Seq;
     use super::*;
     use crate::frame::FrameKind;
-    use super::super::seq::Seq;
 
     fn drain_tx(cop: &mut CopP) -> Vec<CopTx> {
         let mut out = Vec::new();
