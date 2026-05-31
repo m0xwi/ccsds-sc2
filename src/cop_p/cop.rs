@@ -41,7 +41,7 @@ impl CopP {
             farm: FarmP::new(width),
             fop: FopP::new(width),
             pcid: false,
-            use_f2_plcw: false,
+            use_f2_plcw: matches!(width, SeqWidth::Mod65536),
         }
     }
 
@@ -184,9 +184,10 @@ impl CopP {
 
 #[cfg(test)]
 mod tests {
+    use super::super::seq::Seq;
     use super::*;
     use crate::frame::FrameKind;
-    use super::super::seq::Seq;
+    use crate::spdu::FixedLengthSPDU;
 
     fn drain_tx(cop: &mut CopP) -> Vec<CopTx> {
         let mut out = Vec::new();
@@ -245,5 +246,20 @@ mod tests {
             sender.fop.on_plcw_bytes(&bytes);
         }
         assert!(sender.fop.r_r || sender.fop.v_v_s <= sender.fop.v_s);
+    }
+
+    #[test]
+    fn mod65536_defaults_to_f2_plcw() {
+        let mut cop = CopP::new(SeqWidth::Mod65536);
+        cop.farm.v_r = Seq(300);
+
+        let tx = cop.select_transmit();
+
+        match tx {
+            Some(CopTx::Plcw(SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw)))) => {
+                assert_eq!(plcw.report_value, 300);
+            }
+            other => panic!("expected Type F2 PLCW, got {other:?}"),
+        }
     }
 }
