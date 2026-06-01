@@ -6,7 +6,7 @@ use crate::frame::{Frame, FrameKind, Qos, Version3Frame};
 use crate::spdu::{DirectivesOrReportsUHF, SPDU, Type1Directive};
 
 use super::farm::{FarmP, FarmRx};
-use super::fop::{FopP, FopTx};
+use super::fop::{FopP, FopState, FopTx};
 use super::seq::SeqWidth;
 
 /// Combined COP-P endpoint (one node).
@@ -29,7 +29,7 @@ pub struct CopRx {
 /// What the MAC / frame sublayer should transmit next (Table 5-13 subset).
 #[derive(Debug, Clone, PartialEq)]
 pub enum CopTx {
-    /// P-frame carrying Type F1 or F2 PLCW from FARM-P.
+    /// P-frame carrying a supervisory SPDU.
     Plcw(SPDU),
     /// U-frame from FOP-P.
     Data(Frame),
@@ -64,11 +64,11 @@ impl CopP {
     pub fn receive(&mut self, frame: &Frame) -> CopRx {
         if let Frame::V3(f) = frame {
             if f.kind == FrameKind::PFrame {
-                self.fop.on_plcw_bytes(&f.payload);
+                self.on_pframe_for_fop(&f.payload);
             }
         } else if let Frame::V4(f) = frame {
             if f.kind == FrameKind::PFrame {
-                self.fop.on_plcw_bytes(&f.payload);
+                self.on_pframe_for_fop(&f.payload);
             }
         }
 
@@ -81,6 +81,10 @@ impl CopP {
 
     /// Transmit path: select PLCW or data frame (§5.5.3 / §6).
     pub fn select_transmit(&mut self) -> Option<CopTx> {
+        if self.fop.state == FopState::Resync || self.fop.resync {
+            return Some(CopTx::Plcw(self.build_set_vr_spdu()));
+        }
+
         if self.farm.need_plcw {
             let spdu = if self.use_f2_plcw {
                 SPDU::f2(self.farm.plcw_f2(self.pcid))
@@ -104,6 +108,16 @@ impl CopP {
         let tx = self.fop.select_transmit()?;
         let frame = self.build_uframe(&tx);
         Some(CopTx::Data(frame))
+    }
+
+    fn on_pframe_for_fop(&mut self, payload: &[u8]) {
+        if Self::looks_like_fixed_length_spdu(payload) {
+            self.fop.on_plcw_bytes(payload);
+        }
+    }
+
+    fn looks_like_fixed_length_spdu(payload: &[u8]) -> bool {
+        payload.first().map_or(false, |first| (first & 0x80) != 0)
     }
 
     fn build_uframe(&self, tx: &FopTx) -> Frame {
@@ -184,9 +198,9 @@ impl CopP {
 
 #[cfg(test)]
 mod tests {
+    use super::super::seq::Seq;
     use super::*;
     use crate::frame::FrameKind;
-    use super::super::seq::Seq;
 
     fn drain_tx(cop: &mut CopP) -> Vec<CopTx> {
         let mut out = Vec::new();

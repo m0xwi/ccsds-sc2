@@ -2,10 +2,11 @@
 //!
 //! Implements state variables from **CCSDS 235.1-W-0.4 §6.3.2** and events **RE0–RE7** from §6.3.1.
 
-use crate::spdu::{
-    FixedLengthSPDU, PLCW16Bit, PLCW32Bit, SPDU, Type1Directive, VariableLengthSPDU,
-};
 use crate::frame::{Frame, FrameKind, Qos};
+use crate::spdu::{
+    FixedLengthSPDU, PLCW16Bit, PLCW32Bit, SPDU, Type1Directive, Type4Directive, Type5Directive,
+    VariableLengthSPDU,
+};
 
 use super::seq::{Seq, SeqWidth, add_mod, greater_than, less_than};
 
@@ -142,7 +143,7 @@ impl FarmP {
         seq: Option<u16>,
         payload: &[u8],
     ) -> FarmFrameResult {
-        let n_s = seq.map(|s| Seq((s & 0xFF) as u32));
+        let n_s = seq.map(|s| Seq((s as u32) % self.width.modulus()));
 
         match kind {
             FrameKind::PFrame => self.on_pframe_payload(payload),
@@ -197,6 +198,28 @@ impl FarmP {
                     io_payload: None,
                 }
             }
+            SPDU::VariableLengthSPDU(VariableLengthSPDU::Type4(body)) => {
+                for d in &body.directives {
+                    if let Type4Directive::SetVR(sv) = d {
+                        self.on_set_vr(Seq(sv.seq_ctrl_fsn as u32));
+                    }
+                }
+                FarmFrameResult {
+                    rx: FarmRx::Accepted,
+                    io_payload: None,
+                }
+            }
+            SPDU::VariableLengthSPDU(VariableLengthSPDU::Type5(body)) => {
+                for d in &body.directives {
+                    if let Type5Directive::SetVR(sv) = d {
+                        self.on_set_vr(Seq(sv.seq_ctrl_fsn as u32));
+                    }
+                }
+                FarmFrameResult {
+                    rx: FarmRx::Accepted,
+                    io_payload: None,
+                }
+            }
             SPDU::VariableLengthSPDU(_) => FarmFrameResult {
                 rx: FarmRx::Accepted,
                 io_payload: None,
@@ -233,7 +256,7 @@ pub struct FarmFrameResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{Version3Frame, Frame};
+    use crate::frame::{Frame, Version3Frame};
 
     #[test]
     fn re0_initializes_need_flags() {
