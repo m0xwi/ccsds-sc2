@@ -3,7 +3,7 @@
 //! This is the **Gateway 2** integration point described in the competition deliverables.
 
 use crate::frame::{Frame, FrameKind, Qos, Version3Frame};
-use crate::spdu::{DirectivesOrReportsUHF, SPDU, Type1Directive};
+use crate::spdu::{DirectivesOrReportsUHF, FixedLengthSPDU, SPDU, Type1Directive};
 
 use super::farm::{FarmP, FarmRx};
 use super::fop::{FopP, FopTx};
@@ -62,13 +62,20 @@ impl CopP {
 
     /// Receive path: validated frame → FARM-P / FOP-P.
     pub fn receive(&mut self, frame: &Frame) -> CopRx {
-        if let Frame::V3(f) = frame {
-            if f.kind == FrameKind::PFrame {
-                self.fop.on_plcw_bytes(&f.payload);
-            }
-        } else if let Frame::V4(f) = frame {
-            if f.kind == FrameKind::PFrame {
-                self.fop.on_plcw_bytes(&f.payload);
+        let pframe_payload = match frame {
+            Frame::V3(f) if f.kind == FrameKind::PFrame => Some(f.payload.as_slice()),
+            Frame::V4(f) if f.kind == FrameKind::PFrame => Some(f.payload.as_slice()),
+            _ => None,
+        };
+
+        if let Some(payload) = pframe_payload {
+            if matches!(
+                SPDU::from_bytes(payload),
+                Ok(SPDU::FixedLengthSPDU(
+                    FixedLengthSPDU::F1(_) | FixedLengthSPDU::F2(_)
+                ))
+            ) {
+                self.fop.on_plcw_bytes(payload);
             }
         }
 
@@ -81,6 +88,10 @@ impl CopP {
 
     /// Transmit path: select PLCW or data frame (§5.5.3 / §6).
     pub fn select_transmit(&mut self) -> Option<CopTx> {
+        if self.fop.state == super::fop::FopState::Resync {
+            return Some(CopTx::Plcw(self.build_set_vr_spdu()));
+        }
+
         if self.farm.need_plcw {
             let spdu = if self.use_f2_plcw {
                 SPDU::f2(self.farm.plcw_f2(self.pcid))
@@ -184,9 +195,9 @@ impl CopP {
 
 #[cfg(test)]
 mod tests {
+    use super::super::seq::Seq;
     use super::*;
     use crate::frame::FrameKind;
-    use super::super::seq::Seq;
 
     fn drain_tx(cop: &mut CopP) -> Vec<CopTx> {
         let mut out = Vec::new();
