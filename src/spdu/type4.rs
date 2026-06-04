@@ -181,7 +181,7 @@ impl FirstGenLunar {
                     bit_len,
                 } => {
                     w.write_bits_u64((*directive_name & 0x07) as u64, 3);
-                    w.write_bits_bytes(raw_bits, *bit_len);
+                    w.write_bits_bytes(raw_bits, *bit_len)?;
                 }
             }
         }
@@ -214,5 +214,21 @@ mod tests {
         let bytes = lunar.to_bytes().unwrap();
         let parsed = FirstGenLunar::from_bytes(&bytes).unwrap();
         assert_eq!(lunar, parsed);
+    }
+
+    #[test]
+    fn type4_reserved_encoder_rejects_short_raw_bits() {
+        let lunar = FirstGenLunar {
+            directives: vec![Type4Directive::Reserved {
+                directive_name: 0b111,
+                raw_bits: vec![0x80],
+                bit_len: 9,
+            }],
+        };
+
+        assert_eq!(
+            lunar.to_bytes().unwrap_err(),
+            "not enough source bits supplied"
+        );
     }
 }

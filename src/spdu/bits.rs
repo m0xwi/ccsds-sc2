@@ -96,7 +96,10 @@ impl BitWriter {
         self.bit_len += 1;
     }
 
-    pub(crate) fn write_bits_bytes(&mut self, bytes: &[u8], n: usize) {
+    pub(crate) fn write_bits_bytes(&mut self, bytes: &[u8], n: usize) -> Result<(), String> {
+        if bytes.len().saturating_mul(8) < n {
+            return Err("not enough source bits supplied".to_string());
+        }
         // bytes are interpreted MSB-first; only n bits are consumed.
         for i in 0..n {
             let byte_idx = i / 8;
@@ -104,6 +107,7 @@ impl BitWriter {
             let bit = (bytes[byte_idx] >> (7 - bit_in_byte)) & 1;
             self.write_bit(bit);
         }
+        Ok(())
     }
 
     pub(crate) fn into_bytes_padded(self) -> Vec<u8> {
