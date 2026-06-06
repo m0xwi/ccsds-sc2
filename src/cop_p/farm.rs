@@ -2,10 +2,10 @@
 //!
 //! Implements state variables from **CCSDS 235.1-W-0.4 §6.3.2** and events **RE0–RE7** from §6.3.1.
 
+use crate::frame::{Frame, FrameKind, Qos};
 use crate::spdu::{
     FixedLengthSPDU, PLCW16Bit, PLCW32Bit, SPDU, Type1Directive, VariableLengthSPDU,
 };
-use crate::frame::{Frame, FrameKind, Qos};
 
 use super::seq::{Seq, SeqWidth, add_mod, greater_than, less_than};
 
@@ -142,7 +142,7 @@ impl FarmP {
         seq: Option<u16>,
         payload: &[u8],
     ) -> FarmFrameResult {
-        let n_s = seq.map(|s| Seq((s & 0xFF) as u32));
+        let n_s = seq.map(|s| Seq(s as u32));
 
         match kind {
             FrameKind::PFrame => self.on_pframe_payload(payload),
@@ -155,7 +155,12 @@ impl FarmP {
                     }
                 }
                 Qos::SequenceControlled => {
-                    let n_s = n_s.unwrap_or(Seq(0));
+                    let Some(n_s) = n_s else {
+                        return FarmFrameResult {
+                            rx: self.on_invalid_frame(),
+                            io_payload: None,
+                        };
+                    };
                     let rx = self.on_sequence_frame(n_s);
                     FarmFrameResult {
                         rx,
@@ -233,7 +238,7 @@ pub struct FarmFrameResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{Version3Frame, Frame};
+    use crate::frame::{Frame, Version3Frame};
 
     #[test]
     fn re0_initializes_need_flags() {
@@ -325,5 +330,40 @@ mod tests {
         assert_eq!(r.rx, FarmRx::Accepted);
         assert_eq!(r.io_payload, Some(vec![1, 2, 3]));
         assert_eq!(farm.v_r, Seq(1));
+    }
+
+    #[test]
+    fn sequence_controlled_without_sequence_is_invalid() {
+        let mut farm = FarmP::new(SeqWidth::Mod256);
+        let frame = Frame::V3(Version3Frame {
+            kind: FrameKind::UFrame,
+            qos: Qos::SequenceControlled,
+            scid: 0,
+            vcid: 0,
+            seq: None,
+            payload: vec![1, 2, 3],
+        });
+        let r = farm.on_frame(&frame);
+        assert_eq!(r.rx, FarmRx::DiscardedInvalid);
+        assert_eq!(r.io_payload, None);
+        assert_eq!(farm.v_r, Seq(0));
+    }
+
+    #[test]
+    fn mod65536_uses_full_sequence_number() {
+        let mut farm = FarmP::new(SeqWidth::Mod65536);
+        farm.v_r = Seq(300);
+        let frame = Frame::V3(Version3Frame {
+            kind: FrameKind::UFrame,
+            qos: Qos::SequenceControlled,
+            scid: 0,
+            vcid: 0,
+            seq: Some(300),
+            payload: vec![4, 5, 6],
+        });
+        let r = farm.on_frame(&frame);
+        assert_eq!(r.rx, FarmRx::Accepted);
+        assert_eq!(r.io_payload, Some(vec![4, 5, 6]));
+        assert_eq!(farm.v_r, Seq(301));
     }
 }
