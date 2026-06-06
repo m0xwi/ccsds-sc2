@@ -1,7 +1,7 @@
 //! Integration tests for the COP-P layer (Gateway 2).
 
 use ccsds_sc2::{
-    CopP, CopTx, FarmRx, FopTx, Frame, FrameKind, Qos, SeqWidth, Version3Frame,
+    CopP, CopTx, FarmRx, FopState, FopTx, Frame, FrameKind, Qos, Seq, SeqWidth, Version3Frame,
 };
 
 #[test]
@@ -70,4 +70,79 @@ fn expedited_bypasses_sequence_window() {
     fop_side.send_expedited(vec![1, 2, 3]);
     let tx = fop_side.fop.select_transmit();
     assert!(matches!(tx, Some(FopTx::Expedited { .. })));
+}
+
+#[test]
+fn zero_window_constructor_still_allows_one_sequence_frame() {
+    let mut node = CopP::new(SeqWidth::Mod256).with_transmission_window(0);
+    node.farm.need_plcw = false;
+    node.fop.need_plcw = false;
+
+    node.send_sequence_controlled(vec![9]);
+
+    assert!(matches!(
+        node.select_transmit(),
+        Some(CopTx::Data(Frame::V3(Version3Frame {
+            qos: Qos::SequenceControlled,
+            seq: Some(0),
+            payload,
+            ..
+        }))) if payload == vec![9]
+    ));
+}
+
+#[test]
+fn mod65536_sequence_above_255_delivers_end_to_end() {
+    let mut sender = CopP::new(SeqWidth::Mod65536).with_f2_plcw(true);
+    let mut receiver = CopP::new(SeqWidth::Mod65536).with_f2_plcw(true);
+    sender.farm.need_plcw = false;
+    sender.fop.need_plcw = false;
+    sender.fop.v_s = Seq(300);
+    sender.fop.v_v_s = Seq(300);
+    sender.fop.nn_r = Seq(300);
+    receiver.farm.v_r = Seq(300);
+
+    sender.send_sequence_controlled(b"wide-seq".to_vec());
+    let frame = match sender.select_transmit() {
+        Some(CopTx::Data(f)) => f,
+        other => panic!("expected data frame, got {other:?}"),
+    };
+
+    let rx = receiver.receive(&frame);
+    assert_eq!(rx.farm, FarmRx::Accepted);
+    assert_eq!(rx.delivered_payload, Some(b"wide-seq".to_vec()));
+    assert_eq!(receiver.farm.v_r, Seq(301));
+}
+
+#[test]
+fn local_resync_sends_set_vr_and_completes_on_peer_plcw() {
+    let mut sender = CopP::new(SeqWidth::Mod256);
+    let mut receiver = CopP::new(SeqWidth::Mod256);
+    sender.farm.need_plcw = false;
+    sender.fop.need_plcw = false;
+    sender.fop.nn_r = Seq(42);
+    sender.fop.v_s = Seq(42);
+    sender.fop.v_v_s = Seq(42);
+
+    sender.start_resync();
+    let set_vr = match sender.select_transmit() {
+        Some(CopTx::Plcw(spdu)) => spdu,
+        other => panic!("expected SET V(R) SPDU, got {other:?}"),
+    };
+
+    let set_vr_frame = CopP::build_pframe(&set_vr).unwrap();
+    let rx = receiver.receive(&set_vr_frame);
+    assert_eq!(rx.farm, FarmRx::Accepted);
+    assert_eq!(receiver.farm.v_r, Seq(42));
+    assert_eq!(receiver.fop.synch_timer, 0);
+
+    let peer_plcw = match receiver.select_transmit() {
+        Some(CopTx::Plcw(spdu)) => spdu,
+        other => panic!("expected peer PLCW, got {other:?}"),
+    };
+    let peer_plcw_frame = CopP::build_pframe(&peer_plcw).unwrap();
+    sender.receive(&peer_plcw_frame);
+
+    assert_eq!(sender.fop.state, FopState::Active);
+    assert!(!sender.fop.resync);
 }

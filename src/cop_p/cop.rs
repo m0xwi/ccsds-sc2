@@ -6,7 +6,7 @@ use crate::frame::{Frame, FrameKind, Qos, Version3Frame};
 use crate::spdu::{DirectivesOrReportsUHF, SPDU, Type1Directive};
 
 use super::farm::{FarmP, FarmRx};
-use super::fop::{FopP, FopTx};
+use super::fop::{FopP, FopState, FopTx};
 use super::seq::SeqWidth;
 
 /// Combined COP-P endpoint (one node).
@@ -56,7 +56,7 @@ impl CopP {
     }
 
     pub fn with_transmission_window(mut self, window: u32) -> Self {
-        self.fop.transmission_window = window.min(127);
+        self.fop.transmission_window = window.clamp(1, 127);
         self
     }
 
@@ -81,6 +81,10 @@ impl CopP {
 
     /// Transmit path: select PLCW or data frame (§5.5.3 / §6).
     pub fn select_transmit(&mut self) -> Option<CopTx> {
+        if self.fop.state == FopState::Resync && self.fop.resync {
+            return Some(CopTx::Plcw(self.build_set_vr_spdu()));
+        }
+
         if self.farm.need_plcw {
             let spdu = if self.use_f2_plcw {
                 SPDU::f2(self.farm.plcw_f2(self.pcid))
@@ -108,7 +112,7 @@ impl CopP {
 
     fn build_uframe(&self, tx: &FopTx) -> Frame {
         let (qos, seq) = match tx {
-            FopTx::Expedited { seq, .. } => (Qos::Expedited, None),
+            FopTx::Expedited { seq: _, .. } => (Qos::Expedited, None),
             FopTx::SeqNew { seq, .. } | FopTx::SeqResend { seq, .. } => {
                 (Qos::SequenceControlled, Some(seq.as_u16()))
             }
@@ -184,9 +188,9 @@ impl CopP {
 
 #[cfg(test)]
 mod tests {
+    use super::super::seq::Seq;
     use super::*;
     use crate::frame::FrameKind;
-    use super::super::seq::Seq;
 
     fn drain_tx(cop: &mut CopP) -> Vec<CopTx> {
         let mut out = Vec::new();
