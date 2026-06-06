@@ -121,6 +121,8 @@ fn local_resync_sends_set_vr_and_completes_on_peer_plcw() {
     sender.farm.need_plcw = false;
     sender.fop.need_plcw = false;
     sender.fop.nn_r = Seq(42);
+    sender.fop.v_s = Seq(42);
+    sender.fop.v_v_s = Seq(42);
 
     sender.start_resync();
     let set_vr = match sender.select_transmit() {
