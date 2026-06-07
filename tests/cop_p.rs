@@ -1,7 +1,8 @@
 //! Integration tests for the COP-P layer (Gateway 2).
 
 use ccsds_sc2::{
-    CopP, CopTx, FarmRx, FopTx, Frame, FrameKind, Qos, SeqWidth, Version3Frame,
+    CopP, CopTx, DirectivesOrReportsUHF, FarmRx, FopState, FopTx, Frame, FrameKind, Qos, SPDU, Seq,
+    SeqWidth, Type1Directive, Version3Frame,
 };
 
 #[test]
@@ -61,6 +62,53 @@ fn set_vr_resynchronizes_receiver() {
     node.apply_peer_set_vr(100);
     assert_eq!(node.farm.v_r.0, 100);
     assert!(!node.farm.r_s);
+}
+
+#[test]
+fn set_vr_pframe_does_not_corrupt_fop_state() {
+    let mut node = CopP::new(SeqWidth::Mod256);
+    node.send_sequence_controlled(vec![1]);
+    node.send_sequence_controlled(vec![2]);
+    assert!(matches!(
+        node.fop.select_transmit(),
+        Some(FopTx::SeqNew { .. })
+    ));
+    assert!(matches!(
+        node.fop.select_transmit(),
+        Some(FopTx::SeqNew { .. })
+    ));
+    assert_eq!(node.fop.v_v_s, Seq(2));
+
+    let set_vr = SPDU::type1(DirectivesOrReportsUHF::single(Type1Directive::set_vr(42)));
+    let pframe = CopP::build_pframe(&set_vr).unwrap();
+
+    let rx = node.receive(&pframe);
+
+    assert_eq!(rx.farm, FarmRx::Accepted);
+    assert_eq!(node.farm.v_r, Seq(42));
+    assert_eq!(node.fop.state, FopState::Active);
+    assert_eq!(node.fop.synch_timer, 0);
+    assert_eq!(node.fop.v_v_s, Seq(2));
+}
+
+#[test]
+fn mod65536_sequence_controlled_receive_uses_full_sequence_number() {
+    let mut receiver = CopP::new(SeqWidth::Mod65536);
+    receiver.farm.v_r = Seq(300);
+    let frame = Frame::V3(Version3Frame {
+        kind: FrameKind::UFrame,
+        qos: Qos::SequenceControlled,
+        scid: 0,
+        vcid: 0,
+        seq: Some(300),
+        payload: b"seq-300".to_vec(),
+    });
+
+    let rx = receiver.receive(&frame);
+
+    assert_eq!(rx.farm, FarmRx::Accepted);
+    assert_eq!(rx.delivered_payload, Some(b"seq-300".to_vec()));
+    assert_eq!(receiver.farm.v_r, Seq(301));
 }
 
 #[test]
