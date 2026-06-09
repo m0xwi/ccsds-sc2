@@ -162,11 +162,6 @@ impl FopP {
             return Some(self.send_new_seq_frame());
         }
 
-        if less_than(self.nn_r, self.v_s, self.width) {
-            self.v_v_s = self.nn_r;
-            return Some(self.resend_seq_frame());
-        }
-
         None
     }
 
@@ -417,7 +412,7 @@ mod tests {
         let _ = fop.select_transmit();
         fop.nn_r = Seq(0);
         fop.n_r = Seq(0);
-        fop.r_r = false;
+        fop.r_r = true;
         fop.on_valid_plcw();
         let tx = fop.select_transmit();
         assert!(matches!(tx, Some(FopTx::SeqResend { .. })));
