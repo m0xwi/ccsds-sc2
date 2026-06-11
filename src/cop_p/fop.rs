@@ -155,7 +155,7 @@ impl FopP {
         }
 
         if less_than(self.v_v_s, self.v_s, self.width) {
-            return Some(self.resend_seq_frame());
+            return self.resend_seq_frame();
         }
 
         if self.sequence_controlled_available() && self.window_allows_new_seq() {
@@ -164,7 +164,7 @@ impl FopP {
 
         if less_than(self.nn_r, self.v_s, self.width) {
             self.v_v_s = self.nn_r;
-            return Some(self.resend_seq_frame());
+            return self.resend_seq_frame();
         }
 
         None
@@ -190,17 +190,20 @@ impl FopP {
         FopTx::SeqNew { seq, payload }
     }
 
-    fn resend_seq_frame(&mut self) -> FopTx {
+    fn resend_seq_frame(&mut self) -> Option<FopTx> {
         let seq = self.v_v_s;
-        let payload = self
+        let payload = match self
             .sent_queue
             .iter()
             .find(|f| f.seq.0 % self.width.modulus() == seq.0 % self.width.modulus())
             .map(|f| f.payload.clone())
-            .unwrap_or_default();
+        {
+            Some(payload) => payload,
+            None => return None,
+        };
         let m = self.width.modulus();
         self.v_v_s = Seq((self.v_v_s.0 + 1) % m);
-        FopTx::SeqResend { seq, payload }
+        Some(FopTx::SeqResend { seq, payload })
     }
 
     /// Remove acknowledged frames from the sent queue (§6.2.3.1.2).
@@ -247,10 +250,7 @@ impl FopP {
         if r_r && n_r.0 % self.width.modulus() == self.v_s.0 % self.width.modulus() {
             return false;
         }
-        if !r_r
-            && self.rr_r
-            && n_r.0 % self.width.modulus() == self.nn_r.0 % self.width.modulus()
-        {
+        if !r_r && self.rr_r && n_r.0 % self.width.modulus() == self.nn_r.0 % self.width.modulus() {
             return false;
         }
         true
@@ -274,8 +274,7 @@ impl FopP {
     /// **SE2** — Valid PLCW received (§6.2.3.3).
     pub fn on_valid_plcw(&mut self) {
         let m = self.width.modulus();
-        let resync_complete =
-            !self.r_r && self.n_r.0 % m == self.nn_r.0 % m;
+        let resync_complete = !self.r_r && self.n_r.0 % m == self.nn_r.0 % m;
 
         if greater_than(self.n_r, self.nn_r, self.width) {
             self.remove_acknowledged_from_sent_queue();
@@ -305,6 +304,7 @@ impl FopP {
             self.rr_r = false;
             self.resync = true;
             self.state = FopState::Resync;
+            self.need_plcw = true;
         }
     }
 
@@ -424,5 +424,29 @@ mod tests {
         fop.on_valid_plcw();
         let tx = fop.select_transmit();
         assert!(matches!(tx, Some(FopTx::SeqResend { .. })));
+    }
+
+    #[test]
+    fn missing_retransmit_frame_does_not_emit_empty_payload() {
+        let mut fop = FopP::new(SeqWidth::Mod256);
+        fop.queue_sequence_controlled(vec![1]);
+        let _ = fop.select_transmit();
+        fop.sent_queue.clear();
+        fop.v_v_s = Seq(0);
+        fop.v_s = Seq(1);
+
+        assert_eq!(fop.select_transmit(), None);
+        assert_eq!(fop.v_v_s, Seq(0));
+    }
+
+    #[test]
+    fn synch_timeout_marks_set_vr_needed() {
+        let mut fop = FopP::new(SeqWidth::Mod256);
+        fop.need_plcw = false;
+
+        fop.on_synch_timeout();
+
+        assert_eq!(fop.state, FopState::Resync);
+        assert!(fop.need_plcw);
     }
 }
