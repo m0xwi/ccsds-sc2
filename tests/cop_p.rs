@@ -1,7 +1,8 @@
 //! Integration tests for the COP-P layer (Gateway 2).
 
 use ccsds_sc2::{
-    CopP, CopTx, FarmRx, FopTx, Frame, FrameKind, Qos, SeqWidth, Version3Frame,
+    CopP, CopTx, DirectivesOrReportsUHF, FarmRx, FopTx, Frame, FrameKind, Qos, SPDU, Seq, SeqWidth,
+    Type1Directive, Version3Frame,
 };
 
 #[test]
@@ -61,6 +62,44 @@ fn set_vr_resynchronizes_receiver() {
     node.apply_peer_set_vr(100);
     assert_eq!(node.farm.v_r.0, 100);
     assert!(!node.farm.r_s);
+}
+
+#[test]
+fn set_vr_pframe_does_not_invalidate_local_fop() {
+    let mut node = CopP::new(SeqWidth::Mod256);
+    node.fop.v_v_s = Seq(5);
+    node.fop.nn_r = Seq(3);
+
+    let set_vr = SPDU::type1(DirectivesOrReportsUHF::single(Type1Directive::set_vr(42)));
+    let frame = CopP::build_pframe(&set_vr).unwrap();
+
+    let rx = node.receive(&frame);
+
+    assert_eq!(rx.farm, FarmRx::Accepted);
+    assert_eq!(node.farm.v_r, Seq(42));
+    assert_eq!(node.fop.synch_timer, 0);
+    assert_eq!(node.fop.v_v_s, Seq(5));
+}
+
+#[test]
+fn mod65536_sequence_frame_preserves_full_header_sequence() {
+    let mut node = CopP::new(SeqWidth::Mod65536);
+    node.farm.v_r = Seq(300);
+
+    let frame = Frame::V3(Version3Frame {
+        kind: FrameKind::UFrame,
+        qos: Qos::SequenceControlled,
+        scid: 0,
+        vcid: 0,
+        seq: Some(300),
+        payload: b"high-seq".to_vec(),
+    });
+
+    let rx = node.receive(&frame);
+
+    assert_eq!(rx.farm, FarmRx::Accepted);
+    assert_eq!(rx.delivered_payload, Some(b"high-seq".to_vec()));
+    assert_eq!(node.farm.v_r, Seq(301));
 }
 
 #[test]

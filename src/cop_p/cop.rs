@@ -63,11 +63,11 @@ impl CopP {
     /// Receive path: validated frame → FARM-P / FOP-P.
     pub fn receive(&mut self, frame: &Frame) -> CopRx {
         if let Frame::V3(f) = frame {
-            if f.kind == FrameKind::PFrame {
+            if f.kind == FrameKind::PFrame && FarmP::parse_plcw_spdu(&f.payload).is_ok() {
                 self.fop.on_plcw_bytes(&f.payload);
             }
         } else if let Frame::V4(f) = frame {
-            if f.kind == FrameKind::PFrame {
+            if f.kind == FrameKind::PFrame && FarmP::parse_plcw_spdu(&f.payload).is_ok() {
                 self.fop.on_plcw_bytes(&f.payload);
             }
         }
@@ -184,9 +184,9 @@ impl CopP {
 
 #[cfg(test)]
 mod tests {
+    use super::super::seq::Seq;
     use super::*;
     use crate::frame::FrameKind;
-    use super::super::seq::Seq;
 
     fn drain_tx(cop: &mut CopP) -> Vec<CopTx> {
         let mut out = Vec::new();
