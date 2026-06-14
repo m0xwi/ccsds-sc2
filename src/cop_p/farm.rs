@@ -2,10 +2,10 @@
 //!
 //! Implements state variables from **CCSDS 235.1-W-0.4 §6.3.2** and events **RE0–RE7** from §6.3.1.
 
+use crate::frame::{Frame, FrameKind, Qos};
 use crate::spdu::{
     FixedLengthSPDU, PLCW16Bit, PLCW32Bit, SPDU, Type1Directive, VariableLengthSPDU,
 };
-use crate::frame::{Frame, FrameKind, Qos};
 
 use super::seq::{Seq, SeqWidth, add_mod, greater_than, less_than};
 
@@ -142,7 +142,10 @@ impl FarmP {
         seq: Option<u16>,
         payload: &[u8],
     ) -> FarmFrameResult {
-        let n_s = seq.map(|s| Seq((s & 0xFF) as u32));
+        let n_s = seq.map(|s| match self.width {
+            SeqWidth::Mod256 => Seq((s & 0xFF) as u32),
+            SeqWidth::Mod65536 => Seq(s as u32),
+        });
 
         match kind {
             FrameKind::PFrame => self.on_pframe_payload(payload),
@@ -233,7 +236,7 @@ pub struct FarmFrameResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{Version3Frame, Frame};
+    use crate::frame::{Frame, Version3Frame};
 
     #[test]
     fn re0_initializes_need_flags() {
@@ -325,5 +328,32 @@ mod tests {
         assert_eq!(r.rx, FarmRx::Accepted);
         assert_eq!(r.io_payload, Some(vec![1, 2, 3]));
         assert_eq!(farm.v_r, Seq(1));
+    }
+
+    #[test]
+    fn mod65536_uses_full_frame_sequence_number() {
+        let mut farm = FarmP::new(SeqWidth::Mod65536);
+        farm.v_r = Seq(255);
+
+        let frame_255 = Frame::V3(Version3Frame {
+            kind: FrameKind::UFrame,
+            qos: Qos::SequenceControlled,
+            scid: 0,
+            vcid: 0,
+            seq: Some(255),
+            payload: vec![1],
+        });
+        let frame_256 = Frame::V3(Version3Frame {
+            kind: FrameKind::UFrame,
+            qos: Qos::SequenceControlled,
+            scid: 0,
+            vcid: 0,
+            seq: Some(256),
+            payload: vec![2],
+        });
+
+        assert_eq!(farm.on_frame(&frame_255).rx, FarmRx::Accepted);
+        assert_eq!(farm.on_frame(&frame_256).rx, FarmRx::Accepted);
+        assert_eq!(farm.v_r, Seq(257));
     }
 }

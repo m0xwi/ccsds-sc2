@@ -162,11 +162,6 @@ impl FopP {
             return Some(self.send_new_seq_frame());
         }
 
-        if less_than(self.nn_r, self.v_s, self.width) {
-            self.v_v_s = self.nn_r;
-            return Some(self.resend_seq_frame());
-        }
-
         None
     }
 
@@ -247,10 +242,7 @@ impl FopP {
         if r_r && n_r.0 % self.width.modulus() == self.v_s.0 % self.width.modulus() {
             return false;
         }
-        if !r_r
-            && self.rr_r
-            && n_r.0 % self.width.modulus() == self.nn_r.0 % self.width.modulus()
-        {
+        if !r_r && self.rr_r && n_r.0 % self.width.modulus() == self.nn_r.0 % self.width.modulus() {
             return false;
         }
         true
@@ -274,8 +266,7 @@ impl FopP {
     /// **SE2** — Valid PLCW received (§6.2.3.3).
     pub fn on_valid_plcw(&mut self) {
         let m = self.width.modulus();
-        let resync_complete =
-            !self.r_r && self.n_r.0 % m == self.nn_r.0 % m;
+        let resync_complete = !self.r_r && self.n_r.0 % m == self.nn_r.0 % m;
 
         if greater_than(self.n_r, self.nn_r, self.width) {
             self.remove_acknowledged_from_sent_queue();
@@ -305,6 +296,7 @@ impl FopP {
             self.rr_r = false;
             self.resync = true;
             self.state = FopState::Resync;
+            self.need_plcw = true;
         }
     }
 
@@ -412,17 +404,24 @@ mod tests {
     }
 
     #[test]
-    fn progressive_retransmit_when_nn_r_behind() {
+    fn retransmit_requires_peer_request() {
         let mut fop = FopP::new(SeqWidth::Mod256);
         fop.queue_sequence_controlled(vec![1]);
         let _ = fop.select_transmit();
-        fop.queue_sequence_controlled(vec![2]);
-        let _ = fop.select_transmit();
+        assert!(fop.select_transmit().is_none());
+
         fop.nn_r = Seq(0);
         fop.n_r = Seq(0);
-        fop.r_r = false;
+        fop.r_r = true;
         fop.on_valid_plcw();
         let tx = fop.select_transmit();
-        assert!(matches!(tx, Some(FopTx::SeqResend { .. })));
+        assert!(matches!(
+            tx,
+            Some(FopTx::SeqResend {
+                seq: Seq(0),
+                payload
+            }) if payload == vec![1]
+        ));
+        assert!(fop.select_transmit().is_none());
     }
 }

@@ -435,6 +435,11 @@ impl SecondGenLunar {
                     raw_bits,
                     bit_len,
                 } => {
+                    if raw_bits.len() * 8 < *bit_len {
+                        return Err(
+                            "Type 5 reserved directive bit_len exceeds raw_bits".to_string()
+                        );
+                    }
                     w.write_bits_u64((*directive_name & 0x07) as u64, 3);
                     w.write_bits_bytes(raw_bits, *bit_len);
                 }
@@ -478,5 +483,18 @@ mod tests {
         let bytes = lunar.to_bytes().unwrap();
         let parsed = SecondGenLunar::from_bytes(&bytes).unwrap();
         assert_eq!(lunar, parsed);
+    }
+
+    #[test]
+    fn type5_reserved_directive_rejects_short_raw_bits() {
+        let lunar = SecondGenLunar {
+            directives: vec![Type5Directive::Reserved {
+                directive_name: 0b101,
+                raw_bits: vec![0x80],
+                bit_len: 9,
+            }],
+        };
+
+        assert!(lunar.to_bytes().is_err());
     }
 }
