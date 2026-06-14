@@ -299,9 +299,11 @@ impl SPDU {
     pub fn to_bytes(&self) -> Result<Vec<u8>, SpduError> {
         match self {
             SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw)) => {
+                plcw.validate().map_err(SpduError::Invalid)?;
                 Ok(plcw.to_u16().to_be_bytes().to_vec())
             }
             SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw)) => {
+                plcw.validate().map_err(SpduError::Invalid)?;
                 Ok(plcw.to_u32().to_be_bytes().to_vec())
             }
             SPDU::VariableLengthSPDU(vl) => {
@@ -468,6 +470,27 @@ mod tests {
             pdu, parsed,
             "round-trip: decoded value must match constructed PLCW"
         );
+    }
+
+    #[test]
+    fn fixed_plcws_reject_values_that_would_truncate() {
+        let f1 = SPDU::f1(PLCW16Bit {
+            report_value: 0,
+            expedited_frame_counter: 8,
+            reserved_spare: false,
+            pcid: false,
+            retransmit_flag: false,
+        });
+        assert!(matches!(f1.to_bytes(), Err(SpduError::Invalid(_))));
+
+        let f2 = SPDU::f2(PLCW32Bit {
+            report_value: 0,
+            expedited_frame_counter: 0,
+            pcid: false,
+            retransmit_flag: false,
+            reserved_spares: 0x200,
+        });
+        assert!(matches!(f2.to_bytes(), Err(SpduError::Invalid(_))));
     }
 
     /// **INTOP-1.3** — Variable-length Type 1, SET V(R), `SEQ_CTRL_FSN = 42` (workshop / FR-9.5 artifact #3).

@@ -3,7 +3,7 @@
 //! This is the **Gateway 2** integration point described in the competition deliverables.
 
 use crate::frame::{Frame, FrameKind, Qos, Version3Frame};
-use crate::spdu::{DirectivesOrReportsUHF, SPDU, Type1Directive};
+use crate::spdu::{DirectivesOrReportsUHF, FixedLengthSPDU, SPDU, Type1Directive};
 
 use super::farm::{FarmP, FarmRx};
 use super::fop::{FopP, FopTx};
@@ -41,7 +41,7 @@ impl CopP {
             farm: FarmP::new(width),
             fop: FopP::new(width),
             pcid: false,
-            use_f2_plcw: false,
+            use_f2_plcw: matches!(width, SeqWidth::Mod65536),
         }
     }
 
@@ -62,13 +62,20 @@ impl CopP {
 
     /// Receive path: validated frame → FARM-P / FOP-P.
     pub fn receive(&mut self, frame: &Frame) -> CopRx {
-        if let Frame::V3(f) = frame {
-            if f.kind == FrameKind::PFrame {
-                self.fop.on_plcw_bytes(&f.payload);
-            }
-        } else if let Frame::V4(f) = frame {
-            if f.kind == FrameKind::PFrame {
-                self.fop.on_plcw_bytes(&f.payload);
+        let pframe_payload = match frame {
+            Frame::V3(f) if f.kind == FrameKind::PFrame => Some(f.payload.as_slice()),
+            Frame::V4(f) if f.kind == FrameKind::PFrame => Some(f.payload.as_slice()),
+            _ => None,
+        };
+
+        if let Some(payload) = pframe_payload {
+            if matches!(
+                SPDU::from_bytes(payload),
+                Ok(SPDU::FixedLengthSPDU(
+                    FixedLengthSPDU::F1(_) | FixedLengthSPDU::F2(_)
+                ))
+            ) {
+                self.fop.on_plcw_bytes(payload);
             }
         }
 
@@ -92,6 +99,12 @@ impl CopP {
         }
 
         if self.fop.need_plcw {
+            if self.fop.resync {
+                let spdu = self.build_set_vr_spdu();
+                self.fop.plcw_sent();
+                return Some(CopTx::Plcw(spdu));
+            }
+
             let spdu = if self.use_f2_plcw {
                 SPDU::f2(self.farm.plcw_f2(self.pcid))
             } else {
@@ -108,7 +121,7 @@ impl CopP {
 
     fn build_uframe(&self, tx: &FopTx) -> Frame {
         let (qos, seq) = match tx {
-            FopTx::Expedited { seq, .. } => (Qos::Expedited, None),
+            FopTx::Expedited { .. } => (Qos::Expedited, None),
             FopTx::SeqNew { seq, .. } | FopTx::SeqResend { seq, .. } => {
                 (Qos::SequenceControlled, Some(seq.as_u16()))
             }
@@ -184,9 +197,9 @@ impl CopP {
 
 #[cfg(test)]
 mod tests {
+    use super::super::seq::Seq;
     use super::*;
     use crate::frame::FrameKind;
-    use super::super::seq::Seq;
 
     fn drain_tx(cop: &mut CopP) -> Vec<CopTx> {
         let mut out = Vec::new();
@@ -245,5 +258,47 @@ mod tests {
             sender.fop.on_plcw_bytes(&bytes);
         }
         assert!(sender.fop.r_r || sender.fop.v_v_s <= sender.fop.v_s);
+    }
+
+    #[test]
+    fn mod65536_defaults_to_f2_plcws() {
+        let mut cop = CopP::new(SeqWidth::Mod65536);
+
+        let tx = cop.select_transmit();
+        assert!(matches!(
+            tx,
+            Some(CopTx::Plcw(SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(_))))
+        ));
+    }
+
+    #[test]
+    fn type1_pframe_does_not_poison_fop_plcw_state() {
+        let mut cop = CopP::new(SeqWidth::Mod256);
+        let spdu = SPDU::type1(DirectivesOrReportsUHF::single(Type1Directive::set_vr(42)));
+        let frame = CopP::build_pframe(&spdu).unwrap();
+
+        cop.receive(&frame);
+
+        assert_eq!(cop.farm.v_r, Seq(42));
+        assert_eq!(cop.fop.synch_timer, 0);
+        assert_eq!(cop.fop.state, super::super::fop::FopState::Active);
+    }
+
+    #[test]
+    fn resync_transmits_set_vr_directive_once_when_armed() {
+        let mut cop = CopP::new(SeqWidth::Mod256);
+        cop.farm.plcw_sent();
+        cop.fop.plcw_sent();
+
+        cop.start_resync();
+
+        let tx = cop.select_transmit();
+        assert!(matches!(
+            tx,
+            Some(CopTx::Plcw(SPDU::VariableLengthSPDU(
+                crate::spdu::VariableLengthSPDU::Type1(_)
+            )))
+        ));
+        assert!(cop.select_transmit().is_none());
     }
 }
