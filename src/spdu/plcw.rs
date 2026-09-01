@@ -50,10 +50,9 @@ impl PLCW16Bit {
         }
     }
 
-    pub fn to_u16(&self) -> u16 {
-        // Keep encoding “exact” by rejecting values that would be truncated.
-        // (Masks below are still applied as a final safety net.)
-        let _ = self.validate();
+    pub fn to_u16(&self) -> Result<u16, &'static str> {
+        // Keep encoding exact by rejecting values that would be truncated.
+        self.validate()?;
         let mut word = 0u16;
         word |= self.report_value as u16;
         word |= ((self.expedited_frame_counter & 0x07) as u16) << 8;
@@ -67,7 +66,7 @@ impl PLCW16Bit {
             word |= 1 << 13;
         }
         word |= 1 << 15; // format_id=1
-        word
+        Ok(word)
     }
 }
 
@@ -94,8 +93,8 @@ impl PLCW32Bit {
         }
     }
 
-    pub fn to_u32(&self) -> u32 {
-        let _ = self.validate();
+    pub fn to_u32(&self) -> Result<u32, &'static str> {
+        self.validate()?;
         let mut word = 0u32;
         word |= self.report_value as u32;
         word |= ((self.expedited_frame_counter & 0x07) as u32) << 16;
@@ -108,6 +107,6 @@ impl PLCW32Bit {
         word |= ((self.reserved_spares as u32) & 0x1FF) << 21;
         word |= 1 << 31; // format_id=1
         word |= 1 << 30; // type_id=1
-        word
+        Ok(word)
     }
 }

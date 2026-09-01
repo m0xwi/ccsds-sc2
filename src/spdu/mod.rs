@@ -299,10 +299,12 @@ impl SPDU {
     pub fn to_bytes(&self) -> Result<Vec<u8>, SpduError> {
         match self {
             SPDU::FixedLengthSPDU(FixedLengthSPDU::F1(plcw)) => {
-                Ok(plcw.to_u16().to_be_bytes().to_vec())
+                let word = plcw.to_u16().map_err(SpduError::Invalid)?;
+                Ok(word.to_be_bytes().to_vec())
             }
             SPDU::FixedLengthSPDU(FixedLengthSPDU::F2(plcw)) => {
-                Ok(plcw.to_u32().to_be_bytes().to_vec())
+                let word = plcw.to_u32().map_err(SpduError::Invalid)?;
+                Ok(word.to_be_bytes().to_vec())
             }
             SPDU::VariableLengthSPDU(vl) => {
                 let (type_id, body): (u8, Vec<u8>) = match vl {
@@ -467,6 +469,58 @@ mod tests {
         assert_eq!(
             pdu, parsed,
             "round-trip: decoded value must match constructed PLCW"
+        );
+    }
+
+    #[test]
+    fn spdu_fixed_f1_rejects_out_of_range_counter_on_encode() {
+        let pdu = SPDU::f1(PLCW16Bit {
+            report_value: 42,
+            expedited_frame_counter: 8,
+            reserved_spare: false,
+            pcid: true,
+            retransmit_flag: true,
+        });
+
+        assert_eq!(
+            pdu.to_bytes(),
+            Err(SpduError::Invalid(
+                "F1 expedited_frame_counter must be 0..7"
+            )),
+            "encoding must fail instead of truncating the 3-bit expedited counter"
+        );
+    }
+
+    #[test]
+    fn spdu_fixed_f2_rejects_out_of_range_fields_on_encode() {
+        let bad_counter = SPDU::f2(PLCW32Bit {
+            report_value: 500,
+            expedited_frame_counter: 8,
+            pcid: true,
+            retransmit_flag: true,
+            reserved_spares: 0,
+        });
+        assert_eq!(
+            bad_counter.to_bytes(),
+            Err(SpduError::Invalid(
+                "F2 expedited_frame_counter must be 0..7"
+            )),
+            "encoding must fail instead of truncating the 3-bit expedited counter"
+        );
+
+        let bad_spares = SPDU::f2(PLCW32Bit {
+            report_value: 500,
+            expedited_frame_counter: 6,
+            pcid: true,
+            retransmit_flag: true,
+            reserved_spares: 0x200,
+        });
+        assert_eq!(
+            bad_spares.to_bytes(),
+            Err(SpduError::Invalid(
+                "F2 reserved_spares must be 0..=0x1FF (9 bits)"
+            )),
+            "encoding must fail instead of truncating the 9-bit reserved spares"
         );
     }
 
